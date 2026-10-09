@@ -8,3 +8,5 @@ endfunction()
 
 kbs_add_test(test_urlcleaner)
 kbs_add_test(test_rules)
+kbs_add_test(test_execcommand)
+kbs_add_test(test_browserdiscovery)
