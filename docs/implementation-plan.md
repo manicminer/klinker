@@ -42,7 +42,9 @@ or modify the user's desktop configuration.
 - **URL preservation.** Nothing in the core round-trips a URL through `QUrl`
   for output. Tracking removal splits the raw string at the first `?` and `#`,
   drops only matching `&`-separated components and rejoins the rest
-  verbatim. With nothing to remove the input string is returned unchanged.
+  verbatim, empty components included (`?&utm_source=x&` becomes `?&`); the
+  `?` goes only when no component is left. With nothing to remove the input
+  string is returned unchanged.
 - **Tracking list** (exact, case-sensitive, after percent-decoding the name):
   `utm_*`, `gclid`, `dclid`, `gbraid`, `wbraid`, `gclsrc`, `fbclid`,
   `msclkid`, `mc_cid`, `mc_eid`, `yclid`, `twclid`, `ttclid`, `igshid`,
@@ -54,6 +56,11 @@ or modify the user's desktop configuration.
   `http://evil.example\@good.example/` routes as `evil.example`), the host is
   percent-decoded, converted to ACE (IDN) and lower-cased, and a trailing dot
   is ignored.
+- **Numeric hosts** of http(s), ftp and ws(s) URLs follow the WHATWG IPv4
+  parser: a host whose last label is a number must be an IPv4 address and is
+  written in dotted decimal (`127.1`, `0x7f000001` and `2130706433` are all
+  `127.0.0.1`); otherwise it has no canonical host. Numeric domain patterns
+  are canonicalised the same way, and invalid ones are rejected.
 - **Domain rules** compare canonical hosts exactly. **Subdomain rules match
   the apex too**: `example.com` matches `example.com` and `a.b.example.com`
   but not `notexample.com`. Patterns are bare host names (no scheme, port,
@@ -73,9 +80,11 @@ or modify the user's desktop configuration.
   are not already listed. The first file for a desktop ID wins, including a
   `Hidden=true` file masking lower ones. Entries must be `Type=Application`,
   not `NoDisplay`, pass `TryExec`, list `x-scheme-handler/http` or
-  `x-scheme-handler/https`, have a parseable `Exec`, and must not be this
+  `x-scheme-handler/https`, be shown in `$XDG_CURRENT_DESKTOP` per
+  `OnlyShowIn`/`NotShowIn`, have a parseable `Exec`, and must not be this
   application (by desktop ID or executable, including behind `env`).
-  `OnlyShowIn`/`NotShowIn` are not evaluated.
+  Entries whose effective program cannot be determined (e.g. `env -S`) could
+  be this application, so they are skipped with a warning.
 - **Exec conversion** follows the Desktop Entry Specification quoting rules.
   `%u %U %f %F` become `{url}`, `%i` becomes `--icon <Icon>`, `%c` the name,
   `%k` the file path, `%%` a literal `%`; deprecated codes are dropped.
@@ -83,8 +92,13 @@ or modify the user's desktop configuration.
 - **Launch commands** are `program` + argument list. Every argument containing
   `{url}` has it substituted; if none does, the URL is appended as a final
   argument. The URL is always contained within argv elements, never passed
-  through a shell. A shell program with `{url}` embedded inside a larger
-  argument (e.g. `sh -c "firefox {url}"`) is rejected.
+  through a shell. Validation fails closed: it rejects a command whose
+  effective program cannot be determined (`env -S`/`--split-string`, any
+  `env` option it does not know, no program, `{url}` as the program), any
+  shell given a command string (an option containing `c` or `C`, such as
+  `-c`, `-ec`, `-C` or `--command`, wherever `{url}` is or whether the URL is
+  appended), and a shell argument with `{url}` embedded inside it. A shell
+  running a script file with `{url}` as a separate argument is allowed.
 - **Browser settings** are stored as one ordered array. Detected entries store
   only overrides that differ from the desktop file; `reset` clears them.
   Removing a detected browser leaves a `removed` tombstone so a rescan does
@@ -92,14 +106,24 @@ or modify the user's desktop configuration.
   browsers are appended after the configured order, sorted by name.
 - **Config** lives at `$XDG_CONFIG_HOME/kde-browser-switcher/config.json`
   (schema in [configuration.md](configuration.md)). Saving takes a lock file,
-  refuses to replace a file that is malformed or changed since it was loaded,
-  and writes atomically with `QSaveFile`. No URL history is stored.
+  refuses to write a configuration that loading would reject (the existing
+  file is kept), refuses to replace a file that is malformed or changed since
+  it was loaded, and writes atomically with `QSaveFile`. No URL history is stored.
 
 ## Risks carried forward
 
 - Non-UTF-8 bytes in a URL passed on the command line are decoded by Qt before
   the core sees them; milestone 3 should read `argv` carefully.
-- `OnlyShowIn`/`NotShowIn` and localised `Name[xx]` handling rely on KConfig
-  defaults and are not covered by tests.
-- Desktop-file `Exec` values that use `env -S` cannot be validated precisely
-  and only produce a warning.
+- Localised `Name[xx]` handling relies on KConfig defaults and is not covered
+  by tests.
+- Commands behind `env -S` are rejected rather than parsed, and shells cannot
+  be given a command string at all, even one that only uses `"$1"`. Use a
+  script file or the program directly.
+- Hosts that Qt's IDNA conversion rejects (e.g. labels with a leading hyphen)
+  have no canonical host, so domain rules never match them; this fails closed
+  to the chooser.
+- `validateCommand` is advisory in milestone 1. Milestone 2's launcher must
+  call it (and `buildLaunchCommand`'s refusal of option-like URLs) right before
+  every launch, including for routed and hidden browsers.
+- User-visible messages are plain English strings; they need wrapping for
+  translation (KI18n) when the GUI lands.

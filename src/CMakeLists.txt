@@ -1,5 +1,7 @@
 add_library(kbs_core STATIC
+    core/browsercatalog.cpp
     core/browserdiscovery.cpp
+    core/config.cpp
     core/execcommand.cpp
     core/rules.cpp
     core/urlcleaner.cpp
