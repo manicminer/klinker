@@ -1,0 +1,19 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=Browser Switcher
+GenericName=Browser Chooser
+Comment=Choose which browser opens a link, or route links by rules
+Exec=kde-browser-switcher %U
+TryExec=kde-browser-switcher
+Icon=io.github.manicminer.KdeBrowserSwitcher
+Terminal=false
+StartupNotify=false
+MimeType=x-scheme-handler/http;x-scheme-handler/https;text/html;
+Categories=Network;WebBrowser;
+Keywords=browser;link;url;chooser;picker;router;
+Actions=Configure;
+
+[Desktop Action Configure]
+Name=Configure Browser Switcher
+Exec=kde-browser-switcher --settings
