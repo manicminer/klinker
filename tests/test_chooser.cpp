@@ -1,0 +1,844 @@
+#include "testsupport.h"
+#include "ui/chooserwindow.h"
+#include "ui/placement.h"
+#include "ui/theme.h"
+
+#include <QAbstractItemView>
+#include <QApplication>
+#include <QClipboard>
+#include <QGuiApplication>
+#include <QLabel>
+#include <QLineEdit>
+#include <QListView>
+#include <QPushButton>
+#include <QScopeGuard>
+#include <QScreen>
+#include <QScrollArea>
+#include <QScrollBar>
+#include <QSignalSpy>
+#include <QTest>
+#include <QToolButton>
+#include <QWindow>
+
+#ifdef KBS_HAVE_LAYERSHELLQT
+#include <LayerShellQt/Window>
+#endif
+
+#include <cmath>
+
+using namespace Qt::StringLiterals;
+using kbs::ChooserEntry;
+using kbs::ChooserWindow;
+
+namespace
+{
+
+QList<ChooserEntry> entries(int count)
+{
+    static const QStringList names{u"Firefox"_s, u"Chromium"_s, u"Vivaldi"_s, u"Brave"_s, u"Konqueror"_s, u"Falkon"_s,
+                                   u"LibreWolf"_s, u"Tor Browser"_s, u"Epiphany"_s, u"qutebrowser"_s, u"Opera"_s, u"Zen"_s};
+    static const QStringList icons{u"firefox"_s, u"chromium"_s, u"vivaldi"_s, u"brave-browser"_s, u"konqueror"_s, u"falkon"_s};
+    QList<ChooserEntry> result;
+    for (int i = 0; i < count; ++i) {
+        const QString name = i < names.size() ? names[i] : u"Browser %1"_s.arg(i + 1);
+        result.append({u"b%1.desktop"_s.arg(i + 1), name, icons.value(i, u"internet-web-browser"_s),
+                       u"%1 · Detected"_s.arg(name.toLower().remove(u' '))});
+    }
+    return result;
+}
+
+const QString Url = u"https://example.com/articles/2024/a-very-long-path/that-goes-on/and-on?page=2&sort=asc#comments"_s;
+
+struct Fixture {
+    ChooserWindow window;
+    QListView *list = nullptr;
+
+    // The list gets keyboard focus on its own; tests do not give it focus.
+    explicit Fixture(int count = 3, bool busy = false)
+    {
+        window.setOriginalUrl(Url);
+        if (busy) {
+            window.setBusy(u"Following redirects…"_s);
+        } else {
+            window.setFinalUrl(Url, u"Opened as received."_s);
+        }
+        window.setBrowsers(entries(count));
+        window.resize(window.preferredSize());
+        window.show();
+        list = window.findChild<QListView *>(u"browserList"_s);
+        window.activateWindow();
+        if (!QTest::qWaitForWindowActive(&window)) {
+            qWarning("chooser window did not become active");
+        }
+    }
+
+    QRect rowRect(int row) const
+    {
+        return list->visualRect(list->model()->index(row, 0));
+    }
+};
+
+// Sends a key to the window as the platform would, so it reaches whichever
+// widget has keyboard focus (QTest::keyClick(QWidget *) bypasses focus). With
+// accessibility active (a real session), the AT-SPI bridge delivers it
+// asynchronously, so check its effect with QTRY_*.
+void press(QWidget *window, Qt::Key key)
+{
+    QTest::keyClick(window->windowHandle(), key);
+}
+
+// A widget is reachable when it is inside the window, or inside a scroll area
+// (other than the browser list) whose viewport is inside the window and whose
+// scroll range covers it. Either way it must not be squeezed below its height.
+bool reachable(QWidget *widget, QWidget *window, QString *why)
+{
+    const QRect windowRect = window->rect();
+    const int needed = widget->hasHeightForWidth() ? widget->heightForWidth(widget->width()) : widget->minimumSizeHint().height();
+    if (widget->height() < needed) {
+        *why = u"%1 is %2 px high but needs %3"_s.arg(widget->objectName()).arg(widget->height()).arg(needed);
+        return false;
+    }
+    for (QWidget *parent = widget->parentWidget(); parent && parent != window; parent = parent->parentWidget()) {
+        auto *area = qobject_cast<QScrollArea *>(parent);
+        if (!area) {
+            continue;
+        }
+        const QRect viewport(area->viewport()->mapTo(window, QPoint()), area->viewport()->size());
+        if (!windowRect.contains(viewport)) {
+            *why = u"scroll area of %1 is outside the window"_s.arg(widget->objectName());
+            return false;
+        }
+        QWidget *content = area->widget();
+        if (!content) {
+            *why = u"scroll area of %1 has no content"_s.arg(widget->objectName());
+            return false;
+        }
+        const int bottom = widget->mapTo(content, QPoint(0, widget->height())).y();
+        const int range = area->verticalScrollBar()->maximum() + area->viewport()->height();
+        if (bottom > range || bottom > content->height()) {
+            *why = u"%1 ends at %2 but the scroll range ends at %3"_s.arg(widget->objectName()).arg(bottom).arg(range);
+            return false;
+        }
+        return true;
+    }
+    const QRect rect(widget->mapTo(window, QPoint()), widget->size());
+    if (!windowRect.contains(rect)) {
+        *why = u"%1 at %2,%3 %4x%5 is outside the %6x%7 window"_s.arg(widget->objectName())
+                   .arg(rect.x())
+                   .arg(rect.y())
+                   .arg(rect.width())
+                   .arg(rect.height())
+                   .arg(windowRect.width())
+                   .arg(windowRect.height());
+        return false;
+    }
+    return true;
+}
+
+double luminance(const QColor &color)
+{
+    const auto channel = [](float c) {
+        return c <= 0.04045f ? c / 12.92 : std::pow((c + 0.055) / 1.055, 2.4);
+    };
+    const QColor rgb = color.toRgb();
+    return 0.2126 * channel(rgb.redF()) + 0.7152 * channel(rgb.greenF()) + 0.0722 * channel(rgb.blueF());
+}
+
+// WCAG 2 contrast ratio.
+double contrast(const QColor &a, const QColor &b)
+{
+    const double la = luminance(a);
+    const double lb = luminance(b);
+    return (std::max(la, lb) + 0.05) / (std::min(la, lb) + 0.05);
+}
+
+template<typename T>
+T *child(QWidget *parent, const QString &name)
+{
+    T *widget = parent->findChild<T *>(name);
+    if (!widget) {
+        qWarning() << "missing child" << name;
+    }
+    return widget;
+}
+
+} // namespace
+
+class TestChooser : public QObject
+{
+    Q_OBJECT
+
+public:
+    static void initMain()
+    {
+        kbs::test::isolateEnvironment();
+    }
+
+private Q_SLOTS:
+    void initTestCase()
+    {
+        kbs::test::applyTheme(false);
+    }
+
+    void listsBrowsersWithShortcutChips()
+    {
+        Fixture f(3);
+        QVERIFY(f.list);
+        QCOMPARE(f.list->model()->rowCount(), 3);
+        QCOMPARE(f.window.displayedBrowserIds(), (QStringList{u"b1.desktop"_s, u"b2.desktop"_s, u"b3.desktop"_s}));
+        const QModelIndex first = f.list->model()->index(0, 0);
+        QCOMPARE(first.data(Qt::DisplayRole).toString(), u"Firefox"_s);
+        QCOMPARE(first.data(kbs::BrowserListModel::ShortcutRole).toInt(), 1);
+        QVERIFY(first.data(Qt::AccessibleTextRole).toString().contains(u"Firefox"_s));
+        QVERIFY(first.data(Qt::AccessibleTextRole).toString().contains(u"1"_s));
+        QVERIFY(!f.list->accessibleName().isEmpty());
+    }
+
+    void numberKeysChooseTheVisibleRow()
+    {
+        Fixture f(12);
+        QSignalSpy chosen(&f.window, &ChooserWindow::browserChosen);
+        QTest::keyClick(f.list, Qt::Key_1);
+        QCOMPARE(chosen.size(), 1);
+        QCOMPARE(chosen.takeFirst().at(0).toString(), u"b1.desktop"_s);
+
+        Fixture g(12);
+        QSignalSpy chosen9(&g.window, &ChooserWindow::browserChosen);
+        QTest::keyClick(g.list, Qt::Key_9);
+        QCOMPARE(chosen9.size(), 1);
+        QCOMPARE(chosen9.takeFirst().at(0).toString(), u"b9.desktop"_s);
+        // Rows beyond nine have no number.
+        QCOMPARE(g.list->model()->index(9, 0).data(kbs::BrowserListModel::ShortcutRole).toInt(), 0);
+    }
+
+    void numberKeyBeyondTheListDoesNothing()
+    {
+        Fixture f(2);
+        QSignalSpy chosen(&f.window, &ChooserWindow::browserChosen);
+        QTest::keyClick(f.list, Qt::Key_3);
+        QTest::keyClick(f.list, Qt::Key_0);
+        QCOMPARE(chosen.size(), 0);
+    }
+
+    void mouseClickChooses()
+    {
+        Fixture f(3);
+        QSignalSpy chosen(&f.window, &ChooserWindow::browserChosen);
+        QTest::mouseClick(f.list->viewport(), Qt::LeftButton, {}, f.rowRect(1).center());
+        QCOMPARE(chosen.size(), 1);
+        QCOMPARE(chosen.takeFirst().at(0).toString(), u"b2.desktop"_s);
+    }
+
+    void arrowsAndEnterChoose()
+    {
+        Fixture f(3);
+        QSignalSpy chosen(&f.window, &ChooserWindow::browserChosen);
+        QTest::keyClick(f.list, Qt::Key_Down);
+        QTest::keyClick(f.list, Qt::Key_Down);
+        QTest::keyClick(f.list, Qt::Key_Up);
+        QTest::keyClick(f.list, Qt::Key_Return);
+        QCOMPARE(chosen.size(), 1);
+        QCOMPARE(chosen.takeFirst().at(0).toString(), u"b2.desktop"_s);
+    }
+
+    void escapeCancels()
+    {
+        Fixture f(3);
+        QSignalSpy cancelled(&f.window, &ChooserWindow::cancelled);
+        QSignalSpy chosen(&f.window, &ChooserWindow::browserChosen);
+        QTest::keyClick(f.list, Qt::Key_Escape);
+        QCOMPARE(cancelled.size(), 1);
+        QCOMPARE(chosen.size(), 0);
+    }
+
+    void typingFiltersAndDigitsAreTextWhileEditing()
+    {
+        Fixture f(6);
+        QSignalSpy chosen(&f.window, &ChooserWindow::browserChosen);
+        auto *filter = child<QLineEdit>(&f.window, u"filterEdit"_s);
+        QVERIFY(filter);
+        QVERIFY(filter->isHidden());
+
+        QTest::keyClicks(f.list, u"o"_s);
+        QVERIFY(filter->isVisible());
+        QVERIFY(filter->hasFocus());
+        QCOMPARE(filter->text(), u"o"_s);
+        // "o" matches Firefox, Chromium, Konqueror and Falkon, but not Vivaldi or Brave.
+        QCOMPARE(f.window.displayedBrowserIds(), (QStringList{u"b1.desktop"_s, u"b2.desktop"_s, u"b5.desktop"_s, u"b6.desktop"_s}));
+
+        // A digit typed into the filter is text, never a launch.
+        QTest::keyClick(filter, Qt::Key_2);
+        QCOMPARE(chosen.size(), 0);
+        QCOMPARE(filter->text(), u"o2"_s);
+        QVERIFY(f.window.displayedBrowserIds().isEmpty());
+        QTest::keyClick(filter, Qt::Key_Backspace);
+
+        // Down moves into the list, where digits choose among the filtered rows.
+        QTest::keyClick(filter, Qt::Key_Down);
+        QVERIFY(f.list->hasFocus());
+        QCOMPARE(f.list->model()->index(1, 0).data(kbs::BrowserListModel::ShortcutRole).toInt(), 2);
+        QTest::keyClick(f.list, Qt::Key_3);
+        QCOMPARE(chosen.size(), 1);
+        QCOMPARE(chosen.takeFirst().at(0).toString(), u"b5.desktop"_s);
+    }
+
+    void escapeClearsTheFilterBeforeCancelling()
+    {
+        Fixture f(6);
+        QSignalSpy cancelled(&f.window, &ChooserWindow::cancelled);
+        auto *filter = child<QLineEdit>(&f.window, u"filterEdit"_s);
+        QTest::keyClicks(f.list, u"fire"_s);
+        QCOMPARE(f.window.displayedBrowserIds(), QStringList{u"b1.desktop"_s});
+        QTest::keyClick(filter, Qt::Key_Escape);
+        QCOMPARE(cancelled.size(), 0);
+        QVERIFY(filter->isHidden());
+        QCOMPARE(f.window.displayedBrowserIds().size(), 6);
+        QVERIFY(f.list->hasFocus());
+        QTest::keyClick(f.list, Qt::Key_Escape);
+        QCOMPARE(cancelled.size(), 1);
+    }
+
+    void enterInTheFilterChoosesTheFirstMatch()
+    {
+        Fixture f(6);
+        QSignalSpy chosen(&f.window, &ChooserWindow::browserChosen);
+        QTest::keyClicks(f.list, u"kon"_s);
+        QTest::keyClick(child<QLineEdit>(&f.window, u"filterEdit"_s), Qt::Key_Return);
+        QCOMPARE(chosen.size(), 1);
+        QCOMPARE(chosen.takeFirst().at(0).toString(), u"b5.desktop"_s);
+    }
+
+    void busyBlocksChoosingUntilTheFinalUrlIsKnown()
+    {
+        Fixture f(3);
+        QSignalSpy chosen(&f.window, &ChooserWindow::browserChosen);
+        f.window.setBusy(u"Following redirects…"_s);
+        QVERIFY(f.window.isBusy());
+        QVERIFY(!f.list->isEnabled());
+        auto *busy = child<QWidget>(&f.window, u"busyRow"_s);
+        QVERIFY(busy && busy->isVisible());
+        QTest::keyClick(&f.window, Qt::Key_1);
+        QTest::mouseClick(f.list->viewport(), Qt::LeftButton, {}, f.rowRect(0).center());
+        QCOMPARE(chosen.size(), 0);
+
+        f.window.setFinalUrl(u"https://example.org/final"_s, u"Followed 2 redirects."_s);
+        QVERIFY(!f.window.isBusy());
+        QVERIFY(f.list->isEnabled());
+        QVERIFY(busy->isHidden());
+        QVERIFY(f.list->hasFocus());
+        press(&f.window, Qt::Key_1);
+        QTRY_COMPARE(chosen.size(), 1);
+    }
+
+    void theListHasKeyboardFocusWhenShown()
+    {
+        Fixture f(3);
+        QVERIFY(QApplication::activeWindow() == &f.window);
+        QCOMPARE(QApplication::focusWidget(), f.list);
+        QSignalSpy chosen(&f.window, &ChooserWindow::browserChosen);
+        press(&f.window, Qt::Key_Down);
+        press(&f.window, Qt::Key_Return);
+        QTRY_COMPARE(chosen.size(), 1);
+        QCOMPARE(chosen.takeFirst().at(0).toString(), u"b2.desktop"_s);
+    }
+
+    // Focus moves away from the list while it is disabled; the keyboard must
+    // work again as soon as the link is ready, without a click.
+    void theListGetsFocusBackWhenTheLinkIsReady_data()
+    {
+        QTest::addColumn<bool>("shownBusy");
+        QTest::addColumn<Qt::Key>("key");
+        QTest::addColumn<QString>("expected");
+        QTest::newRow("busy before showing, Enter") << true << Qt::Key_Return << u"b2.desktop"_s;
+        QTest::newRow("busy before showing, 3") << true << Qt::Key_3 << u"b3.desktop"_s;
+        QTest::newRow("busy while shown, Enter") << false << Qt::Key_Return << u"b2.desktop"_s;
+        QTest::newRow("busy while shown, 3") << false << Qt::Key_3 << u"b3.desktop"_s;
+    }
+
+    void theListGetsFocusBackWhenTheLinkIsReady()
+    {
+        QFETCH(bool, shownBusy);
+        QFETCH(Qt::Key, key);
+        QFETCH(QString, expected);
+        Fixture f(3, shownBusy);
+        if (!shownBusy) {
+            QCOMPARE(QApplication::focusWidget(), f.list);
+            f.window.setBusy(u"Following redirects…"_s);
+        }
+        QVERIFY(!f.list->hasFocus());
+        QSignalSpy chosen(&f.window, &ChooserWindow::browserChosen);
+        QSignalSpy settings(&f.window, &ChooserWindow::settingsRequested);
+        QSignalSpy cancelled(&f.window, &ChooserWindow::cancelled);
+        QSignalSpy skipped(&f.window, &ChooserWindow::resolutionSkipped);
+
+        f.window.setFinalUrl(u"https://example.org/final"_s, u"Followed 1 redirect."_s);
+        QCOMPARE(QApplication::focusWidget(), f.list);
+        if (key == Qt::Key_Return) {
+            press(&f.window, Qt::Key_Down);
+        }
+        press(&f.window, key);
+        QTRY_COMPARE(chosen.size(), 1);
+        QCOMPARE(chosen.takeFirst().at(0).toString(), expected);
+        QCOMPARE(settings.size(), 0);
+        QCOMPARE(cancelled.size(), 0);
+        QCOMPARE(skipped.size(), 0);
+    }
+
+    void skippingReturnsFocusToTheList()
+    {
+        Fixture f(3, true);
+        auto *skip = child<QPushButton>(&f.window, u"skipButton"_s);
+        connect(&f.window, &ChooserWindow::resolutionSkipped, &f.window, [&f] {
+            f.window.setFinalUrl(Url, u"Skipped."_s);
+        });
+        QTest::mouseClick(skip, Qt::LeftButton);
+        QVERIFY(!f.window.isBusy());
+        QCOMPARE(QApplication::focusWidget(), f.list);
+    }
+
+    // A control the user moved to while waiting keeps the focus.
+    void readinessDoesNotTakeFocusFromAChosenControl()
+    {
+        Fixture f(3, true);
+        auto *details = child<QToolButton>(&f.window, u"detailsButton"_s);
+        for (int i = 0; i < 10 && QApplication::focusWidget() != details; ++i) {
+            QWidget *before = QApplication::focusWidget();
+            press(&f.window, Qt::Key_Tab);
+            QTRY_VERIFY(QApplication::focusWidget() != before);
+        }
+        QCOMPARE(QApplication::focusWidget(), details);
+        f.window.setFinalUrl(u"https://example.org/final"_s, u"Followed 1 redirect."_s);
+        QCOMPARE(QApplication::focusWidget(), details);
+    }
+
+    void skipEndsResolutionOnRequest()
+    {
+        Fixture f(3);
+        f.window.setBusy(u"Following redirects…"_s);
+        QSignalSpy skipped(&f.window, &ChooserWindow::resolutionSkipped);
+        auto *skip = child<QPushButton>(&f.window, u"skipButton"_s);
+        QVERIFY(skip && skip->isVisible());
+        QTest::mouseClick(skip, Qt::LeftButton);
+        QCOMPARE(skipped.size(), 1);
+    }
+
+    void urlsArePlainTextElidedAndCopyable()
+    {
+        Fixture f(2);
+        const QString nasty = u"https://example.com/<b>bold</b>/&amp;/"_s + QString(400, u'x');
+        f.window.setOriginalUrl(nasty);
+        f.window.setFinalUrl(nasty, u"Opened as received."_s);
+        auto *label = child<kbs::ElidedLabel>(&f.window, u"finalUrlLabel"_s);
+        QVERIFY(label);
+        QCOMPARE(label->text(), nasty);
+        QCOMPARE(f.window.finalUrl(), nasty);
+        QVERIFY(label->displayedText().contains(u'…'));
+        QVERIFY(label->displayedText().startsWith(u"https://example.com/"_s));
+        QVERIFY(label->displayedText().endsWith(u"xxx"_s));
+        QCOMPARE(label->accessibleName(), nasty);
+
+        auto *copy = child<QToolButton>(&f.window, u"copyUrlButton"_s);
+        QVERIFY(copy);
+        QVERIFY(!copy->accessibleName().isEmpty());
+        QTest::mouseClick(copy, Qt::LeftButton);
+        QCOMPARE(QGuiApplication::clipboard()->text(), nasty);
+    }
+
+    void detailsDiscloseTheOriginalUrlAndRedirectStatus()
+    {
+        Fixture f(2);
+        f.window.setOriginalUrl(u"https://t.example/r/abc"_s);
+        f.window.setFinalUrl(u"https://example.org/target"_s, u"Followed 1 redirect."_s);
+        auto *details = child<QToolButton>(&f.window, u"detailsButton"_s);
+        auto *original = child<kbs::ElidedLabel>(&f.window, u"originalUrlLabel"_s);
+        auto *status = child<QLabel>(&f.window, u"redirectStatusLabel"_s);
+        QVERIFY(details && original && status);
+        QVERIFY(!original->isVisible());
+        QTest::mouseClick(details, Qt::LeftButton);
+        QVERIFY(original->isVisible());
+        QCOMPARE(original->text(), u"https://t.example/r/abc"_s);
+        QCOMPARE(status->text(), u"Followed 1 redirect."_s);
+        QCOMPARE(status->textFormat(), Qt::PlainText);
+
+        // The two links are told apart by name, and each can be copied in full.
+        QStringList captions;
+        for (QLabel *label : f.window.findChild<QWidget *>(u"detailsPanel"_s)->findChildren<QLabel *>()) {
+            captions.append(label->text());
+        }
+        QVERIFY2(captions.contains(u"Original"_s), qPrintable(captions.join(u", "_s)));
+        QVERIFY(!captions.contains(u"Received"_s));
+        QVERIFY(original->accessibleDescription().contains(u"Original"_s));
+        auto *final = child<kbs::ElidedLabel>(&f.window, u"finalUrlLabel"_s);
+        QVERIFY(final->accessibleDescription().contains(u"Destination"_s));
+        QVERIFY(child<QToolButton>(&f.window, u"copyUrlButton"_s)->accessibleName().contains(u"destination"_s));
+
+        auto *copyOriginal = child<QToolButton>(&f.window, u"copyOriginalButton"_s);
+        QVERIFY(copyOriginal && copyOriginal->isVisible());
+        QVERIFY(copyOriginal->accessibleName().contains(u"original"_s));
+        QVERIFY(copyOriginal->focusPolicy() & Qt::TabFocus);
+        QGuiApplication::clipboard()->clear();
+        copyOriginal->setFocus(Qt::TabFocusReason);
+        press(&f.window, Qt::Key_Space);
+        QTRY_COMPARE(QGuiApplication::clipboard()->text(), u"https://t.example/r/abc"_s);
+    }
+
+    // The whole card, not only the browser list, has to fit small screens:
+    // long errors and details scroll, and the footer stays reachable.
+    void theWholeCardFitsASmallScreen_data()
+    {
+        QTest::addColumn<qreal>("fontScale");
+        QTest::newRow("normal font") << 1.0;
+        QTest::newRow("large font") << 1.5;
+    }
+
+    void theWholeCardFitsASmallScreen()
+    {
+        QFETCH(qreal, fontScale);
+        // Like a larger font chosen in System Settings.
+        const QFont normalFont = QApplication::font();
+        const auto restoreFont = qScopeGuard([normalFont] {
+            QApplication::setFont(normalFont);
+        });
+        QFont font = normalFont;
+        font.setPointSizeF(font.pointSizeF() * fontScale);
+        QApplication::setFont(font);
+        ChooserWindow window;
+        window.setOriginalUrl(u"https://l.example.net/?u="_s + QString(300, u'x'));
+        window.setFinalUrl(Url, u"Followed 3 redirects.\nRemoved 2 tracking parameters.\nThe last request took a while."_s);
+        window.setBrowsers(entries(6));
+        window.showError(u"Could not start Vivaldi.\n"_s + QStringList(12, u"A long line of error output that wraps across the card."_s).join(u'\n'));
+
+        const QRect small(0, 0, 400, 280);
+        kbs::PlacementRequest request;
+        request.preferredSize = window.preferredSize();
+        request.screens = {{u"small"_s, small, small}};
+        request.primaryOutput = u"small"_s;
+        const kbs::Placement placement = kbs::planPlacement(request);
+        QVERIFY(placement.isValid());
+        QVERIFY(request.preferredSize.height() > placement.geometry.height()); // the content really does not fit
+        window.resize(placement.geometry.size());
+        window.show();
+        window.activateWindow();
+        QVERIFY(QTest::qWaitForWindowActive(&window));
+        child<QToolButton>(&window, u"detailsButton"_s)->click();
+        window.resize(placement.geometry.size());
+        QCoreApplication::processEvents();
+        QCOMPARE(window.size(), placement.geometry.size());
+        QVERIFY(small.adjusted(8, 8, -8, -8).contains(placement.geometry));
+
+        QString why;
+        for (const QString &name : {u"heading"_s, u"finalUrlLabel"_s, u"copyUrlButton"_s, u"detailsButton"_s, u"originalUrlLabel"_s,
+                                    u"redirectStatusLabel"_s, u"messageWidget"_s, u"settingsButton"_s, u"cancelButton"_s}) {
+            QWidget *widget = child<QWidget>(&window, name);
+            QVERIFY(widget && widget->isVisible());
+            QVERIFY2(reachable(widget, &window, &why), qPrintable(why));
+        }
+
+        // At least one browser row shows, and the keyboard still chooses.
+        auto *list = child<QListView>(&window, u"browserList"_s);
+        QVERIFY(reachable(list, &window, &why));
+        QVERIFY2(list->viewport()->height() >= list->sizeHintForRow(0),
+                 qPrintable(u"list viewport %1, row %2"_s.arg(list->viewport()->height()).arg(list->sizeHintForRow(0))));
+        QCOMPARE(QApplication::focusWidget(), list);
+        QSignalSpy chosen(&window, &ChooserWindow::browserChosen);
+        for (int i = 0; i < 5; ++i) {
+            press(&window, Qt::Key_Down);
+        }
+        press(&window, Qt::Key_Return);
+        QTRY_COMPARE(chosen.size(), 1);
+        QCOMPARE(chosen.takeFirst().at(0).toString(), u"b6.desktop"_s);
+        // The message's text itself must have room for all of its lines.
+        int wrapped = 0;
+        for (QLabel *label : child<QWidget>(&window, u"messageWidget"_s)->findChildren<QLabel *>()) {
+            if (label->isVisible() && label->wordWrap()) {
+                ++wrapped;
+                QVERIFY2(reachable(label, &window, &why), qPrintable(why));
+            }
+        }
+        QCOMPARE(wrapped, 1);
+        kbs::test::saveScreenshot(&window, u"chooser-small-screen-%1"_s.arg(fontScale > 1 ? u"large-font"_s : u"normal-font"_s));
+    }
+
+    // Ordinary content needs no scrolling at the preferred size.
+    void ordinaryContentDoesNotScroll()
+    {
+        Fixture f(3);
+        child<QToolButton>(&f.window, u"detailsButton"_s)->click();
+        f.window.resize(f.window.preferredSize());
+        QCoreApplication::processEvents();
+        for (QScrollArea *area : f.window.findChildren<QScrollArea *>()) {
+            QCOMPARE(area->verticalScrollBar()->maximum(), 0);
+        }
+        QString why;
+        QVERIFY2(reachable(child<QWidget>(&f.window, u"cancelButton"_s), &f.window, &why), qPrintable(why));
+    }
+
+    void secondaryTextIsReadable_data()
+    {
+        QTest::addColumn<bool>("dark");
+        QTest::newRow("light") << false;
+        QTest::newRow("dark") << true;
+    }
+
+    // Detail lines and number chips stay secondary but meet WCAG AA (4.5:1).
+    void secondaryTextIsReadable()
+    {
+        QFETCH(bool, dark);
+        kbs::test::applyTheme(dark);
+        const QPalette palette = QApplication::palette();
+        const double ratio = contrast(kbs::subduedTextColor(palette), palette.color(QPalette::Window));
+        kbs::test::applyTheme(false);
+        QVERIFY2(ratio >= 4.5, qPrintable(u"contrast %1:1"_s.arg(ratio, 0, 'f', 2)));
+        QVERIFY2(ratio < contrast(palette.color(QPalette::WindowText), palette.color(QPalette::Window)),
+                 "secondary text must stay less prominent than normal text");
+    }
+
+    void errorsArePersistentPlainText()
+    {
+        Fixture f(2);
+        const QString error = u"Could not start <b>Firefox</b>: No such file"_s;
+        auto *message = child<QWidget>(&f.window, u"messageWidget"_s);
+        QVERIFY(message);
+        QVERIFY(!message->isVisible());
+        QVERIFY(f.window.messageText().isEmpty());
+        f.window.showError(error);
+        QVERIFY(message->isVisible());
+        QCOMPARE(f.window.messageText(), error);
+        // Shown literally, not as rich text, and named for assistive technology.
+        const QList<QLabel *> labels = message->findChildren<QLabel *>();
+        const auto shown = std::ranges::find(labels, error, &QLabel::text);
+        QVERIFY(shown != labels.cend());
+        QCOMPARE((*shown)->textFormat(), Qt::PlainText);
+        QCOMPARE(message->accessibleName(), u"Error"_s);
+        QCOMPARE(message->accessibleDescription(), error);
+        // Refreshing the list keeps the error.
+        f.window.setBrowsers(entries(3));
+        QVERIFY(message->isVisible());
+        QCOMPARE(f.window.messageText(), error);
+        // ... and the chooser still works for a retry.
+        QSignalSpy chosen(&f.window, &ChooserWindow::browserChosen);
+        QCOMPARE(QApplication::focusWidget(), f.list);
+        press(&f.window, Qt::Key_1);
+        QTRY_COMPARE(chosen.size(), 1);
+        f.window.clearError();
+        QVERIFY(!message->isVisible());
+        QVERIFY(f.window.messageText().isEmpty());
+    }
+
+    void refreshedListHasNoStaleShortcuts()
+    {
+        Fixture f(3);
+        QList<ChooserEntry> reordered = entries(3);
+        reordered.removeAt(1);
+        std::swap(reordered[0], reordered[1]);
+        f.window.setBrowsers(reordered);
+        QCOMPARE(f.window.displayedBrowserIds(), (QStringList{u"b3.desktop"_s, u"b1.desktop"_s}));
+        QSignalSpy chosen(&f.window, &ChooserWindow::browserChosen);
+        QCOMPARE(QApplication::focusWidget(), f.list);
+        press(&f.window, Qt::Key_1);
+        QTRY_COMPARE(chosen.size(), 1);
+        QCOMPARE(chosen.takeFirst().at(0).toString(), u"b3.desktop"_s);
+        press(&f.window, Qt::Key_2);
+        QTRY_COMPARE(chosen.size(), 1);
+        QCOMPARE(chosen.takeFirst().at(0).toString(), u"b1.desktop"_s);
+        // 3 chooses nothing: the next choice is the one made with 1.
+        press(&f.window, Qt::Key_3);
+        press(&f.window, Qt::Key_1);
+        QTRY_COMPARE(chosen.size(), 1);
+        QCOMPARE(chosen.takeFirst().at(0).toString(), u"b3.desktop"_s);
+    }
+
+    void emptyStateOffersSettings()
+    {
+        ChooserWindow window;
+        window.setFinalUrl(Url, QString());
+        window.setBrowsers({}, 2);
+        window.resize(window.preferredSize());
+        window.show();
+        auto *empty = child<QWidget>(&window, u"emptyState"_s);
+        auto *text = child<QLabel>(&window, u"emptyStateText"_s);
+        QVERIFY(empty && empty->isVisible());
+        QVERIFY(text->text().contains(u"hidden"_s));
+        QVERIFY(!child<QListView>(&window, u"browserList"_s)->isVisible());
+
+        QSignalSpy settings(&window, &ChooserWindow::settingsRequested);
+        QTest::mouseClick(child<QPushButton>(&window, u"emptyStateSettingsButton"_s), Qt::LeftButton);
+        QCOMPARE(settings.size(), 1);
+
+        window.setBrowsers({}, 0);
+        QVERIFY(text->text().contains(u"No web browsers"_s));
+        kbs::test::saveScreenshot(&window, u"chooser-empty-light"_s);
+    }
+
+    void footerSettingsAndCancel()
+    {
+        Fixture f(2);
+        QSignalSpy settings(&f.window, &ChooserWindow::settingsRequested);
+        QSignalSpy cancelled(&f.window, &ChooserWindow::cancelled);
+        auto *settingsButton = child<QPushButton>(&f.window, u"settingsButton"_s);
+        auto *cancelButton = child<QPushButton>(&f.window, u"cancelButton"_s);
+        QVERIFY(settingsButton && cancelButton);
+        QVERIFY(!settingsButton->accessibleName().isEmpty());
+        QTest::mouseClick(settingsButton, Qt::LeftButton);
+        QCOMPARE(settings.size(), 1);
+        QTest::mouseClick(cancelButton, Qt::LeftButton);
+        QCOMPARE(cancelled.size(), 1);
+    }
+
+    void closingTheWindowCancelsOnce()
+    {
+        Fixture f(2);
+        QSignalSpy cancelled(&f.window, &ChooserWindow::cancelled);
+        f.window.close();
+        QCOMPARE(cancelled.size(), 1);
+    }
+
+    void longListsScrollInsideSmallWindows()
+    {
+        Fixture f(30);
+        QCOMPARE(f.window.preferredSize().width(), ChooserWindow::CardWidth);
+        const QSize nine = f.window.preferredSize();
+        Fixture g(9);
+        QCOMPARE(g.window.preferredSize(), nine);
+
+        f.window.resize(ChooserWindow::CardWidth, 260);
+        QTRY_VERIFY(f.list->verticalScrollBar()->maximum() > 0);
+        for (int i = 0; i < 25; ++i) {
+            QTest::keyClick(f.list, Qt::Key_Down);
+        }
+        QVERIFY(f.list->viewport()->rect().intersects(f.rowRect(25)));
+        QSignalSpy chosen(&f.window, &ChooserWindow::browserChosen);
+        QTest::keyClick(f.list, Qt::Key_Return);
+        QCOMPARE(chosen.takeFirst().at(0).toString(), u"b26.desktop"_s);
+    }
+
+    void preferredSizeFollowsTheFont()
+    {
+        Fixture f(4);
+        const int normal = f.window.preferredSize().height();
+        QFont large = f.window.font();
+        large.setPointSizeF(large.pointSizeF() * 1.6);
+        f.window.setFont(large);
+        QVERIFY(f.window.preferredSize().height() > normal);
+    }
+
+    void screenshots_data()
+    {
+        QTest::addColumn<bool>("dark");
+        QTest::newRow("light") << false;
+        QTest::newRow("dark") << true;
+    }
+
+    void screenshots()
+    {
+        QFETCH(bool, dark);
+        kbs::test::applyTheme(dark);
+        const QString suffix = dark ? u"dark"_s : u"light"_s;
+        {
+            Fixture f(5);
+            f.window.setOriginalUrl(u"https://l.example.net/?u=https%3A%2F%2Fkde.org%2Fannouncements%2F&utm_source=feed"_s);
+            f.window.setFinalUrl(u"https://kde.org/announcements/plasma/6/6.7.0/"_s, u"Followed 1 redirect; removed 1 tracking parameter."_s);
+            QTest::keyClick(f.list, Qt::Key_Down);
+            const QImage image = f.window.grab().toImage();
+            QVERIFY(!image.isNull());
+            const int lightness = kbs::test::meanLightness(image);
+            QVERIFY2(dark ? lightness < 110 : lightness > 150, qPrintable(u"mean lightness %1"_s.arg(lightness)));
+            // Rounded corners are transparent.
+            QCOMPARE(image.pixelColor(0, 0).alpha(), 0);
+            kbs::test::saveScreenshot(&f.window, u"chooser-"_s + suffix);
+
+            child<QToolButton>(&f.window, u"detailsButton"_s)->click();
+            f.window.showError(u"Could not start Vivaldi: “vivaldi-stable” was not found in PATH."_s);
+            f.window.resize(f.window.preferredSize());
+            kbs::test::saveScreenshot(&f.window, u"chooser-details-error-"_s + suffix);
+        }
+        {
+            Fixture f(4);
+            f.window.setBusy(u"Following redirects…"_s);
+            kbs::test::saveScreenshot(&f.window, u"chooser-busy-"_s + suffix);
+        }
+        {
+            Fixture f(14);
+            f.window.resize(ChooserWindow::CardWidth, 420);
+            QTest::keyClicks(f.list, u"r"_s);
+            kbs::test::saveScreenshot(&f.window, u"chooser-filtered-scrolling-"_s + suffix);
+        }
+        kbs::test::applyTheme(false);
+    }
+
+    void waylandLayerShellPopup_data()
+    {
+        QTest::addColumn<bool>("busy");
+        QTest::newRow("ready") << false;
+        QTest::newRow("busy, then ready") << true;
+    }
+
+    // Wayland only: QT_QPA_PLATFORM=wayland ./test_chooser waylandLayerShellPopup
+    void waylandLayerShellPopup()
+    {
+        if (!QGuiApplication::platformName().startsWith(u"wayland"_s)) {
+            QSKIP("needs QT_QPA_PLATFORM=wayland");
+        }
+#ifndef KBS_HAVE_LAYERSHELLQT
+        QSKIP("built without LayerShellQt");
+#else
+        QFETCH(bool, busy);
+        ChooserWindow window;
+        window.setOriginalUrl(Url);
+        if (busy) {
+            window.setBusy(u"Following redirects…"_s);
+        } else {
+            window.setFinalUrl(Url, u"Opened as received."_s);
+        }
+        window.setBrowsers(entries(5));
+        const kbs::PopupPlacement placed = kbs::placePopup(&window, window.preferredSize());
+        QVERIFY(placed.layerShell);
+        QCOMPARE(placed.placement.mode, kbs::PlacementMode::Centered);
+        // Under KWin the active output comes from D-Bus; elsewhere the primary screen is used.
+        const QString active = kbs::kwinActiveOutputName();
+        qInfo() << "KWin active output:" << active;
+        const auto names = QGuiApplication::screens();
+        if (std::ranges::any_of(names, [&active](QScreen *s) {
+                return s->name() == active;
+            })) {
+            QCOMPARE(placed.placement.screenName, active);
+        } else {
+            QCOMPARE(placed.placement.screenName, QGuiApplication::primaryScreen()->name());
+        }
+        auto *layer = LayerShellQt::Window::get(window.windowHandle());
+        QCOMPARE(layer->anchors(), LayerShellQt::Window::Anchors());
+        QCOMPARE(layer->layer(), LayerShellQt::Window::LayerTop);
+        QCOMPARE(layer->exclusionZone(), 0);
+        QCOMPARE(layer->keyboardInteractivity(), LayerShellQt::Window::KeyboardInteractivityOnDemand);
+
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        QScreen *screen = window.windowHandle()->screen();
+        QVERIFY(screen);
+        qInfo() << "placed on" << placed.placement.screenName << "screen" << screen->name() << "size" << window.size();
+        QVERIFY(window.width() <= screen->availableGeometry().width());
+        QVERIFY(window.height() <= screen->availableGeometry().height());
+        QCOMPARE(window.size(), placed.placement.geometry.size());
+
+        // The compositor itself must give the layer surface keyboard focus
+        // (QWindow::isActive() follows wl_keyboard enter/leave).
+        QVERIFY(QTest::qWaitForWindowActive(&window));
+        auto *list = window.findChild<QListView *>(u"browserList"_s);
+        if (busy) {
+            window.setFinalUrl(u"https://example.org/final"_s, u"Followed 1 redirect."_s);
+        }
+        QTRY_COMPARE(QApplication::focusWidget(), list);
+
+        QSignalSpy chosen(&window, &ChooserWindow::browserChosen);
+        press(&window, Qt::Key_2);
+        // With accessibility active, the AT-SPI bridge delivers key events asynchronously.
+        QTRY_COMPARE(chosen.size(), 1);
+        QCOMPARE(chosen.first().at(0).toString(), u"b2.desktop"_s);
+        kbs::test::saveScreenshot(&window, busy ? u"chooser-wayland-layershell-after-busy"_s : u"chooser-wayland-layershell"_s);
+#endif
+    }
+};
+
+QTEST_MAIN(TestChooser)
+
+#include "test_chooser.moc"

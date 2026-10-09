@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/kbs">
+        <file alias="app-icon.svg">../../data/icons/io.github.manicminer.KdeBrowserSwitcher.svg</file>
+    </qresource>
+</RCC>

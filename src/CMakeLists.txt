@@ -18,3 +18,23 @@ add_library(kbs_network STATIC
 
 target_link_libraries(kbs_network PUBLIC kbs_core Qt6::Network)
 target_compile_options(kbs_network PRIVATE -Wall -Wextra -Wpedantic)
+
+# Widgets: chooser, settings and window placement.
+add_library(kbs_ui STATIC
+    ui/browserlistmodel.cpp ui/browserlistmodel.h
+    ui/chooserwindow.cpp ui/chooserwindow.h
+    ui/placement.cpp ui/placement.h
+    ui/theme.cpp ui/theme.h
+    ui/resources.qrc
+)
+
+target_link_libraries(kbs_ui
+    PUBLIC kbs_core Qt6::Widgets KF6::WidgetsAddons
+    PRIVATE Qt6::DBus KF6::IconWidgets
+)
+target_compile_definitions(kbs_ui PUBLIC KBS_APP_ID="${KBS_APP_ID}" KBS_VERSION="${PROJECT_VERSION}")
+target_compile_options(kbs_ui PRIVATE -Wall -Wextra -Wpedantic)
+if(LayerShellQt_FOUND)
+    target_link_libraries(kbs_ui PRIVATE LayerShellQt::Interface)
+    target_compile_definitions(kbs_ui PRIVATE KBS_HAVE_LAYERSHELLQT)
+endif()
