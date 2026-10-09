@@ -1,0 +1,10 @@
+function(kbs_add_test name)
+    add_executable(${name} ${name}.cpp)
+    target_link_libraries(${name} PRIVATE kbs_core Qt6::Test)
+    target_compile_definitions(${name} PRIVATE KBS_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+    add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endfunction()
+
+kbs_add_test(test_urlcleaner)
+kbs_add_test(test_rules)
