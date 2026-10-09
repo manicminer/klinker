@@ -12,3 +12,6 @@ kbs_add_test(test_execcommand)
 kbs_add_test(test_browserdiscovery)
 kbs_add_test(test_browsercatalog)
 kbs_add_test(test_config)
+
+kbs_add_test(test_redirectresolver)
+target_link_libraries(test_redirectresolver PRIVATE kbs_network)
