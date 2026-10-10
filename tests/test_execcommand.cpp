@@ -24,7 +24,7 @@ QString makeExecutable(const QTemporaryDir &dir, const QString &name)
 
 SelfIdentity testSelf(const QString &path = {})
 {
-    return {u"kde-browser-switcher.desktop"_s, u"kde-browser-switcher"_s, path.isEmpty() ? QStringList() : QStringList{path}};
+    return {{u"kde-browser-switcher.desktop"_s}, {u"kde-browser-switcher"_s}, path.isEmpty() ? QStringList() : QStringList{path}};
 }
 } // namespace
 
@@ -209,6 +209,37 @@ private Q_SLOTS:
 
         const auto validation = validateCommand({u"env"_s, {u"kde-browser-switcher"_s}}, self);
         QVERIFY(!validation.ok());
+    }
+
+    // Klinker was called Browser Switcher (kde-browser-switcher) before; an
+    // installed copy of either would open links in a loop.
+    void bothNamesAreSelf_data()
+    {
+        QTest::addColumn<QString>("name");
+        QTest::newRow("klinker") << u"klinker"_s;
+        QTest::newRow("kde-browser-switcher") << u"kde-browser-switcher"_s;
+    }
+
+    void bothNamesAreSelf()
+    {
+        QFETCH(QString, name);
+        const SelfIdentity self = SelfIdentity::current();
+        QVERIFY(isSelfCommand({name, {u"{url}"_s}}, self));
+        QVERIFY(isSelfCommand({u"/home/user/.local/bin/"_s + name, {u"{url}"_s}}, self));
+        QVERIFY(isSelfCommand({u"env"_s, {u"A=1"_s, name, u"{url}"_s}}, self));
+        const CommandValidation validation = validateCommand({name, {u"{url}"_s}}, self);
+        QVERIFY(!validation.ok());
+        QVERIFY2(validation.errors.join(u' ').contains(u"Klinker"_s), qPrintable(validation.errors.join(u' ')));
+        QVERIFY(!isSelfCommand({name + u"-helper"_s, {}}, self));
+    }
+
+    void selfDesktopIdsCoverBothNames()
+    {
+        const QStringList ids = SelfIdentity::current().desktopIds;
+        for (const QString &id : {u"io.github.manicminer.Klinker.desktop"_s, u"klinker.desktop"_s,
+                                  u"io.github.manicminer.KdeBrowserSwitcher.desktop"_s, u"kde-browser-switcher.desktop"_s}) {
+            QVERIFY2(ids.contains(id), qPrintable(id));
+        }
     }
 
     void validation()

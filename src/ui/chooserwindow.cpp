@@ -10,6 +10,7 @@
 #include <QClipboard>
 #include <QCloseEvent>
 #include <QFocusEvent>
+#include <QHideEvent>
 #include <QGuiApplication>
 #include <QGridLayout>
 #include <QHBoxLayout>
@@ -20,6 +21,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPushButton>
+#include <QResizeEvent>
 #include <QScopedValueRollback>
 #include <QScreen>
 #include <QScrollArea>
@@ -47,6 +49,15 @@ constexpr int RowPaddingY = 8;
 constexpr int RowGap = 12;
 constexpr int RowRadius = 7;
 constexpr int CardRadius = 12;
+// Horizontal tiles: padding around the icon, the gap between tiles (half on
+// each side) and between icon and name, and the width names get, in average
+// characters.
+constexpr int TilePadding = 10;
+constexpr int TileGap = 6;
+constexpr int NameGap = 6;
+constexpr int NameChars = 11;
+// The horizontal card is never narrower, so the link and footer have room.
+constexpr int HorizontalMinWidth = 380;
 
 QFont detailFont(const QFont &base)
 {
@@ -62,21 +73,50 @@ QFont nameFont(const QFont &base)
     return font;
 }
 
-// Browser row: 32 px icon, bold name over a subdued detail line, and the
-// number key on the right. Hover and selection use the palette's accent.
+} // namespace
+
+// A browser as a row of the vertical list or a tile of the horizontal strip.
+// Hover and selection use the palette's accent.
 class BrowserDelegate : public QStyledItemDelegate
 {
 public:
     using QStyledItemDelegate::QStyledItemDelegate;
 
+    ChooserSettings preferences;
+
+    bool horizontal() const
+    {
+        return preferences.style == ChooserStyle::Horizontal;
+    }
+
+    // Every tile has the same size: the icon with padding, and room for a
+    // centred name of about NameChars characters below it.
+    QSize tileSize(const QFont &font) const
+    {
+        const int icon = preferences.iconSize;
+        if (!preferences.showBrowserNames) {
+            return {icon + 2 * TilePadding + TileGap, icon + 2 * TilePadding + TileGap};
+        }
+        const QFontMetrics metrics(font);
+        const int width = std::max(icon, metrics.averageCharWidth() * NameChars) + 2 * TilePadding + TileGap;
+        return {width, icon + NameGap + metrics.height() + 2 * TilePadding + TileGap};
+    }
+
     QSize sizeHint(const QStyleOptionViewItem &option, const QModelIndex &) const override
     {
+        if (horizontal()) {
+            return tileSize(option.font);
+        }
         const int text = QFontMetrics(nameFont(option.font)).height() + 2 + QFontMetrics(detailFont(option.font)).height();
         return {IconSize + 2 * RowPaddingX, std::max(IconSize, text) + 2 * RowPaddingY};
     }
 
     void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override
     {
+        if (horizontal()) {
+            paintTile(painter, option, index);
+            return;
+        }
         painter->save();
         painter->setRenderHint(QPainter::Antialiasing);
         const QPalette &palette = option.palette;
@@ -144,26 +184,176 @@ public:
                           detailMetrics.elidedText(index.data(BrowserListModel::DetailRole).toString(), Qt::ElideMiddle, textWidth));
         painter->restore();
     }
+
+private:
+    // The icon centred at the top, an optional elided name below it and the
+    // number key as a small badge on the icon's top right corner.
+    void paintTile(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const
+    {
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing);
+        const QPalette &palette = option.palette;
+        const bool enabled = option.state & QStyle::State_Enabled;
+        const bool selected = option.state & QStyle::State_Selected;
+        const bool hovered = option.state & QStyle::State_MouseOver;
+        const bool focused = option.state & QStyle::State_HasFocus || (selected && option.widget && option.widget->hasFocus());
+        if (!enabled) {
+            painter->setOpacity(0.45);
+        }
+
+        const QRect tile = option.rect.adjusted(TileGap / 2, TileGap / 2, -(TileGap - TileGap / 2), -(TileGap - TileGap / 2));
+        const QColor accent = palette.color(QPalette::Active, QPalette::Highlight);
+        if (enabled && (selected || hovered)) {
+            QColor fill = accent;
+            fill.setAlphaF(selected ? 0.22f : 0.12f);
+            QColor border = accent;
+            border.setAlphaF(selected ? (focused ? 0.95f : 0.55f) : 0.35f);
+            painter->setPen(QPen(border, 1));
+            painter->setBrush(fill);
+            painter->drawRoundedRect(QRectF(tile).adjusted(0.5, 0.5, -0.5, -0.5), RowRadius, RowRadius);
+        }
+
+        const int size = preferences.iconSize;
+        const QRect content = tile.adjusted(TilePadding, TilePadding, -TilePadding, -TilePadding);
+        const QRect iconRect(content.center().x() - size / 2 + 1, content.top(), size, size);
+        const QIcon icon = index.data(Qt::DecorationRole).value<QIcon>();
+        icon.paint(painter, iconRect, Qt::AlignCenter, enabled ? QIcon::Normal : QIcon::Disabled);
+
+        if (preferences.showBrowserNames) {
+            const QFontMetrics metrics(option.font);
+            const QRect nameRect(content.left(), iconRect.bottom() + 1 + NameGap, content.width(), metrics.height());
+            painter->setFont(option.font);
+            painter->setPen(palette.color(QPalette::WindowText));
+            painter->drawText(nameRect, Qt::AlignHCenter | Qt::AlignVCenter,
+                              metrics.elidedText(index.data(Qt::DisplayRole).toString(), Qt::ElideRight, nameRect.width()));
+        }
+
+        const int shortcut = index.data(BrowserListModel::ShortcutRole).toInt();
+        if (shortcut > 0) {
+            const QFont badgeFont = detailFont(option.font);
+            const QFontMetrics badgeMetrics(badgeFont);
+            const int side = std::max(badgeMetrics.height() + 2, badgeMetrics.horizontalAdvance(u"9"_s) + 8);
+            // Over the icon's corner, but never outside the tile.
+            const int left = std::min(iconRect.right() - side / 2 - 2, tile.right() - side - 2);
+            const int top = std::max(iconRect.top() - side / 2 + 2, tile.top() + 2);
+            const QRectF badge(left, top, side, side);
+            const QColor text = palette.color(QPalette::WindowText);
+            const QColor window = palette.color(QPalette::Window);
+            painter->setPen(QPen(selected ? accent : mixColors(text, window, 0.6), 1));
+            painter->setBrush(mixColors(window, text, 0.06));
+            painter->drawRoundedRect(badge.adjusted(0.5, 0.5, -0.5, -0.5), side / 2.0, side / 2.0);
+            painter->setFont(badgeFont);
+            painter->setPen(selected ? text : subduedTextColor(palette));
+            painter->drawText(badge, Qt::AlignCenter, QString::number(shortcut));
+        }
+        painter->restore();
+    }
 };
 
-// Asks for exactly as many rows as the chooser wants to show at once.
+// Vertically, asks for exactly as many rows as the chooser wants to show at
+// once. Horizontally, asks for the width of every tile and the height of one,
+// plus a scroll bar when the width it gets is too small for all of them.
 class BrowserListView : public QListView
 {
 public:
-    using QListView::QListView;
+    BrowserListView(BrowserDelegate *delegate, QWidget *parent)
+        : QListView(parent)
+        , m_delegate(delegate)
+    {
+        delegate->setParent(this);
+        setItemDelegate(delegate);
+    }
+
+    bool horizontal() const
+    {
+        return m_delegate->horizontal();
+    }
+
+    QSize tileSize() const
+    {
+        return m_delegate->tileSize(font());
+    }
+
+    // All tiles side by side.
+    int stripWidth() const
+    {
+        return std::max(1, model() ? model()->rowCount() : 0) * tileSize().width();
+    }
 
     QSize sizeHint() const override
     {
+        if (horizontal()) {
+            return {stripWidth() + 2 * frameWidth(), heightForWidth(stripWidth() + 2 * frameWidth())};
+        }
         const int rows = std::min(model() ? model()->rowCount() : 0, ChooserWindow::MaxShownRows);
         const int rowHeight = std::max(1, sizeHintForRow(0) > 0 ? sizeHintForRow(0) : 52);
         return {ChooserWindow::CardWidth, std::max(1, rows) * rowHeight + 2 * frameWidth()};
     }
 
+    // Horizontally, one tile, or less (scrolling vertically too) rather than
+    // pushing the rest of a tiny window off the screen.
     QSize minimumSizeHint() const override
     {
+        if (horizontal()) {
+            const QSize tile = tileSize();
+            return {tile.width() + 2 * frameWidth(), std::min(tile.height(), 48) + scrollBarExtent() + 2 * frameWidth()};
+        }
         return {100, std::max(sizeHintForRow(0), 40) + 2 * frameWidth()};
     }
+
+    bool hasHeightForWidth() const override
+    {
+        return horizontal();
+    }
+
+    // QListView leaves the last pixel column of a tile outside the viewport
+    // when scrolling right; the whole tile is shown instead.
+    void scrollTo(const QModelIndex &index, ScrollHint hint = EnsureVisible) override
+    {
+        QListView::scrollTo(index, hint);
+        if (!horizontal() || !index.isValid()) {
+            return;
+        }
+        const QRect tile = visualRect(index);
+        const QRect area = viewport()->rect();
+        QScrollBar *bar = horizontalScrollBar();
+        if (tile.width() > area.width() || tile.left() < area.left()) {
+            bar->setValue(bar->value() + tile.left() - area.left());
+        } else if (tile.right() > area.right()) {
+            bar->setValue(bar->value() + tile.right() - area.right());
+        }
+    }
+
+    int heightForWidth(int width) const override
+    {
+        if (!horizontal()) {
+            return QListView::heightForWidth(width);
+        }
+        const bool scrolls = stripWidth() > width - 2 * frameWidth();
+        return tileSize().height() + (scrolls ? scrollBarExtent() : 0) + 2 * frameWidth();
+    }
+
+protected:
+    void resizeEvent(QResizeEvent *event) override
+    {
+        QListView::resizeEvent(event);
+        // Whether the scroll bar needs room may have changed.
+        if (horizontal() && event->oldSize().width() != event->size().width()) {
+            updateGeometry();
+        }
+    }
+
+private:
+    int scrollBarExtent() const
+    {
+        return style()->pixelMetric(QStyle::PM_ScrollBarExtent, nullptr, horizontalScrollBar());
+    }
+
+    BrowserDelegate *m_delegate;
 };
+
+namespace
+{
 
 // Holds everything above the browser list. It asks for its full content
 // height, but can shrink to its first row and scroll, so that long details or
@@ -493,17 +683,18 @@ ChooserWindow::ChooserWindow(QWidget *parent)
     connect(m_filterEdit, &QLineEdit::textChanged, this, &ChooserWindow::setFilterText);
     root->addWidget(m_filterEdit);
 
-    m_list = new BrowserListView(this);
+    m_delegate = new BrowserDelegate;
+    m_list = new BrowserListView(m_delegate, this);
     m_list->setObjectName(u"browserList"_s);
     m_list->setAccessibleName(u"Browsers"_s);
     m_list->setModel(m_filter);
-    m_list->setItemDelegate(new BrowserDelegate(m_list));
     m_list->setFrameShape(QFrame::NoFrame);
     m_list->setUniformItemSizes(true);
     m_list->setSelectionMode(QAbstractItemView::SingleSelection);
     m_list->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_list->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_list->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+    m_list->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
     m_list->setMouseTracking(true);
     m_list->setAttribute(Qt::WA_Hover);
     m_list->viewport()->setAutoFillBackground(false);
@@ -512,6 +703,7 @@ ChooserWindow::ChooserWindow(QWidget *parent)
     m_list->installEventFilter(this);
     connect(m_list, &QListView::clicked, this, &ChooserWindow::choose);
     root->addWidget(m_list, 1);
+    m_root = root;
 
     m_emptyState = new QWidget(content);
     m_emptyState->setObjectName(u"emptyState"_s);
@@ -667,20 +859,101 @@ QString ChooserWindow::messageText() const
     return m_message->isHidden() ? QString() : m_message->text();
 }
 
+void ChooserWindow::setPreferences(const ChooserSettings &preferences)
+{
+    const bool focusLost = preferences.closeOnFocusLoss && !m_preferences.closeOnFocusLoss && m_wasActive && isVisible() && !isActiveWindow();
+    m_preferences = preferences;
+    if (focusLost) {
+        // Turned on while another application has the focus.
+        scheduleFocusLossCheck();
+    }
+    m_delegate->preferences = preferences;
+    const bool horizontal = preferences.style == ChooserStyle::Horizontal;
+    // The same list and model either way, so choosing works the same.
+    m_list->setFlow(horizontal ? QListView::LeftToRight : QListView::TopToBottom);
+    m_list->setWrapping(false);
+    m_list->setHorizontalScrollBarPolicy(horizontal ? Qt::ScrollBarAsNeeded : Qt::ScrollBarAlwaysOff);
+    // Horizontally only needed when the window is too low for a whole tile.
+    m_list->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    // Horizontally its height follows the width (see heightForWidth()); any
+    // extra height goes to the content area.
+    QSizePolicy policy(horizontal ? QSizePolicy::Preferred : QSizePolicy::Expanding, horizontal ? QSizePolicy::Preferred : QSizePolicy::Expanding);
+    policy.setHeightForWidth(horizontal);
+    m_list->setSizePolicy(policy);
+    // A strip narrower than the card is centred instead of stretched.
+    m_root->setStretchFactor(m_list, horizontal ? 0 : 1);
+    m_root->setAlignment(m_list, horizontal ? Qt::AlignHCenter : Qt::Alignment());
+    m_list->setAccessibleDescription(horizontal ? u"Left and Right choose a browser, Enter opens the link"_s : QString());
+    // Breeze fills the area behind scroll bars in the viewport's colour; the
+    // strip's scroll bar sits on the card (the viewport itself is not filled).
+    m_list->viewport()->setBackgroundRole(horizontal ? QPalette::Window : QPalette::Base);
+    // Tile sizes are cached with uniform item sizes.
+    m_list->setUniformItemSizes(false);
+    m_list->setUniformItemSizes(true);
+    m_list->doItemsLayout();
+    m_list->updateGeometry();
+    if (m_list->currentIndex().isValid()) {
+        m_list->scrollTo(m_list->currentIndex());
+    }
+    updateSize();
+}
+
+ChooserSettings ChooserWindow::preferences() const
+{
+    return m_preferences;
+}
+
 QSize ChooserWindow::preferredSize() const
 {
-    QLayout *root = layout();
+    return preferredSize(QSize());
+}
+
+QSize ChooserWindow::preferredSize(const QSize &maximum) const
+{
     // The content's own layout request may still be queued.
     m_content->updateGeometry();
-    root->invalidate();
-    const int height = root->hasHeightForWidth() ? root->heightForWidth(CardWidth) : root->sizeHint().height();
-    return {CardWidth, std::max(height, minimumHeight())};
+    m_list->updateGeometry();
+    m_root->invalidate();
+    int width = CardWidth;
+    if (m_preferences.style == ChooserStyle::Horizontal) {
+        const QMargins margins = m_root->contentsMargins();
+        width = std::max({HorizontalMinWidth, m_list->sizeHint().width() + margins.left() + margins.right(), m_root->minimumSize().width()});
+        if (maximum.isValid()) {
+            width = std::min(width, maximum.width());
+        }
+    }
+    const int height = m_root->hasHeightForWidth() ? m_root->heightForWidth(width) : m_root->sizeHint().height();
+    return {width, std::max(height, minimumHeight())};
+}
+
+void ChooserWindow::refit()
+{
+    QScreen *current = screen();
+    const QRect available = current ? current->availableGeometry() : QRect();
+    if (!available.isValid()) {
+        resize(preferredSize());
+        return;
+    }
+    const QSize maximum = kbs::maximumSize(available, 8);
+    const QSize size = preferredSize(maximum).boundedTo(maximum);
+    // Layer-shell surfaces are positioned by the compositor; others are kept on screen.
+    if (QGuiApplication::platformName().startsWith(u"wayland"_s)) {
+        resize(size);
+        return;
+    }
+    setGeometry(fitToArea(geometry(), size, available, 8));
 }
 
 void ChooserWindow::dismiss()
 {
     m_closed = true;
+    m_focusLossPending = false;
     close();
+}
+
+bool ChooserWindow::isFocusLossPending() const
+{
+    return m_focusLossPending;
 }
 
 void ChooserWindow::paintEvent(QPaintEvent *)
@@ -693,13 +966,91 @@ void ChooserWindow::paintEvent(QPaintEvent *)
     painter.drawRoundedRect(card, CardRadius, CardRadius);
 }
 
+// Closing on focus loss follows the window's real activation, not the focus
+// moving between its controls. A window that never had the focus cannot lose
+// it, and the state is checked again a moment later, so a deactivation that is
+// undone at once, or that belonged to the window before it was hidden and
+// shown again, does nothing. Until then the loss is pending (see
+// isFocusLossPending()), and whatever ends it reports so exactly once.
+bool ChooserWindow::event(QEvent *event)
+{
+    const bool handled = QWidget::event(event);
+    switch (event->type()) {
+    case QEvent::WindowActivate:
+        m_wasActive = true;
+        ++m_activation;
+        resolveFocusLoss();
+        break;
+    case QEvent::WindowDeactivate:
+        ++m_activation;
+        if (m_preferences.closeOnFocusLoss && m_wasActive && isVisible() && !m_closed) {
+            scheduleFocusLossCheck();
+        } else {
+            resolveFocusLoss();
+        }
+        break;
+    default:
+        break;
+    }
+    return handled;
+}
+
+void ChooserWindow::scheduleFocusLossCheck()
+{
+    m_focusLossPending = true;
+    QTimer::singleShot(FocusLossDelayMs, this, [this, activation = m_activation] {
+        checkFocusLoss(activation);
+    });
+}
+
+void ChooserWindow::checkFocusLoss(quint64 activation)
+{
+    // Stale: whatever changed m_activation since has ended or renewed the decision.
+    if (!m_focusLossPending || activation != m_activation) {
+        return;
+    }
+    // Not leaving: the focus is back, or a menu or dialog of this application has it.
+    if (m_closed || !m_preferences.closeOnFocusLoss || !isVisible() || isActiveWindow() || QGuiApplication::focusWindow()
+        || QApplication::activePopupWidget() || QApplication::activeModalWidget()) {
+        resolveFocusLoss();
+        return;
+    }
+    emitCancelled();
+}
+
+void ChooserWindow::resolveFocusLoss()
+{
+    if (!m_focusLossPending) {
+        return;
+    }
+    m_focusLossPending = false;
+    if (!m_closed) {
+        Q_EMIT focusLossResolved();
+    }
+}
+
 // The keyboard belongs to the browser list whenever the card is (re)shown.
 void ChooserWindow::showEvent(QShowEvent *event)
 {
     QWidget::showEvent(event);
     if (!event->spontaneous()) {
         m_userFocus = nullptr;
+        m_wasActive = isActiveWindow();
+        ++m_activation;
+        resolveFocusLoss();
         restoreListFocus();
+    }
+}
+
+// Hidden on purpose (while the settings are open): losing the focus now is
+// not the user leaving.
+void ChooserWindow::hideEvent(QHideEvent *event)
+{
+    QWidget::hideEvent(event);
+    if (!event->spontaneous()) {
+        m_wasActive = false;
+        ++m_activation;
+        resolveFocusLoss();
     }
 }
 
@@ -901,30 +1252,15 @@ void ChooserWindow::emitCancelled()
         return;
     }
     m_closed = true;
+    m_focusLossPending = false;
     Q_EMIT cancelled();
 }
 
 // Grows or shrinks a visible window to its contents, within its screen.
 void ChooserWindow::updateSize()
 {
-    if (!isVisible()) {
-        return;
-    }
-    QScreen *current = screen();
-    const QRect available = current ? current->availableGeometry() : QRect();
-    QSize size = preferredSize();
-    if (available.isValid()) {
-        size = size.boundedTo(kbs::maximumSize(available, 8));
-    }
-    if (size == this->size()) {
-        return;
-    }
-    resize(size);
-    // Layer-shell surfaces are positioned by the compositor; others are kept on screen.
-    if (available.isValid() && !QGuiApplication::platformName().startsWith(u"wayland"_s)) {
-        const QRect area = available.adjusted(8, 8, -8, -8);
-        move(std::clamp(x(), area.left(), std::max(area.left(), area.right() - width() + 1)),
-             std::clamp(y(), area.top(), std::max(area.top(), area.bottom() - height() + 1)));
+    if (isVisible()) {
+        refit();
     }
 }
 

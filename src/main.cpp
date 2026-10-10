@@ -15,7 +15,7 @@ namespace
 
 void setApplicationMetadata()
 {
-    QCoreApplication::setApplicationName(u"kde-browser-switcher"_s);
+    QCoreApplication::setApplicationName(u"klinker"_s);
     QCoreApplication::setApplicationVersion(QStringLiteral(KBS_VERSION));
     QCoreApplication::setOrganizationDomain(u"manicminer.github.io"_s);
 }
@@ -48,10 +48,10 @@ int main(int argc, char **argv)
             print(stdout, commandLine.helpText);
             return 0;
         case kbs::CommandLine::Action::ShowVersion:
-            print(stdout, u"kde-browser-switcher %1\n"_s.arg(QStringLiteral(KBS_VERSION)));
+            print(stdout, u"klinker %1\n"_s.arg(QStringLiteral(KBS_VERSION)));
             return 0;
         default:
-            print(stderr, u"kde-browser-switcher: %1\nTry “kde-browser-switcher --help”.\n"_s.arg(commandLine.error));
+            print(stderr, u"klinker: %1\nTry “klinker --help”.\n"_s.arg(commandLine.error));
             return 2;
         }
     }

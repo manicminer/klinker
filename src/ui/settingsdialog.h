@@ -9,16 +9,18 @@ class KMessageWidget;
 class KPageWidgetItem;
 class QCheckBox;
 class QComboBox;
+class QFormLayout;
 class QGroupBox;
 class QLabel;
 class QLineEdit;
 class QPushButton;
+class QSpinBox;
 class QTreeWidget;
 
 namespace kbs
 {
 
-// Browsers, routing rules and privacy settings. All edits go to a draft;
+// Browsers, chooser appearance, routing rules and privacy settings. All edits go to a draft;
 // nothing is written or changed elsewhere until Apply or OK succeeds, and
 // Cancel discards the draft.
 class SettingsDialog : public KPageDialog
@@ -45,7 +47,7 @@ public:
     // returned; nothing is changed.
     bool apply();
 
-    void showPage(const QString &name); // "browsers", "rules", "privacy" or "about"
+    void showPage(const QString &name); // "browsers", "appearance", "rules", "privacy" or "about"
 
 Q_SIGNALS:
     // After a successful save, with the browsers known at that moment.
@@ -56,11 +58,14 @@ public Q_SLOTS:
 
 private:
     QWidget *createBrowsersPage();
+    QWidget *createAppearancePage();
     QWidget *createRulesPage();
     QWidget *createPrivacyPage();
     QWidget *createAboutPage();
 
     void refreshBrowsers(const QString &selectId = QString());
+    void refreshAppearance();
+    void updateSourceRow();
     void refreshRules(int selectRow = -1);
     void updateBrowserButtons();
     void loadRuleEditor();
@@ -92,6 +97,7 @@ private:
     QList<DetectedBrowser> m_detected;
     QList<Rule> m_rules;
     PrivacySettings m_privacy;
+    ChooserSettings m_chooser;
     QStringList m_dataDirs;
     SelfIdentity m_self;
     bool m_savingAllowed = true;
@@ -108,6 +114,11 @@ private:
     QPushButton *m_resetBrowser = nullptr;
     QPushButton *m_removeBrowser = nullptr;
 
+    QComboBox *m_chooserStyle = nullptr;
+    QSpinBox *m_iconSize = nullptr;
+    QCheckBox *m_showNames = nullptr;
+    QCheckBox *m_closeOnFocusLoss = nullptr;
+
     QTreeWidget *m_ruleTable = nullptr;
     QPushButton *m_removeRule = nullptr;
     QPushButton *m_ruleUp = nullptr;
@@ -121,6 +132,9 @@ private:
     KMessageWidget *m_ruleProblem = nullptr;
     QLineEdit *m_testUrl = nullptr;
     QLabel *m_testResult = nullptr;
+
+    QFormLayout *m_aboutForm = nullptr;
+    QLabel *m_legacySource = nullptr;
 
     QCheckBox *m_stripTracking = nullptr;
     QCheckBox *m_unwrapRedirects = nullptr;

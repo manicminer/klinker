@@ -70,7 +70,7 @@ std::optional<DetectedBrowser> readBrowser(const QString &path, const QString &d
     }
     browser.command = *parsed.command;
 
-    if (desktopId == self.desktopId) {
+    if (self.desktopIds.contains(desktopId)) {
         return std::nullopt;
     }
     if (effectiveProgram(browser.command).isEmpty()) {

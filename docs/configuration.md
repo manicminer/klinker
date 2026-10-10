@@ -1,12 +1,32 @@
 # Configuration file
 
-kde-browser-switcher keeps its settings in a single human-editable JSON file:
+Klinker keeps its settings in a single human-editable JSON file:
 
-    $XDG_CONFIG_HOME/kde-browser-switcher/config.json
+    $XDG_CONFIG_HOME/klinker/config.json
 
-(`~/.config/kde-browser-switcher/config.json` when `XDG_CONFIG_HOME` is unset.)
+(`~/.config/klinker/config.json` when `XDG_CONFIG_HOME` is unset.)
 A missing file means "all defaults". The application never stores visited URLs
-or any history.
+or any history. `--config FILE` uses another file instead.
+
+## Settings from Browser Switcher
+
+Klinker was called Browser Switcher (`kde-browser-switcher`) before. Its
+settings, in `$XDG_CONFIG_HOME/kde-browser-switcher/config.json`, are used
+without any action on your part:
+
+- While `klinker/config.json` does not exist, Klinker reads the old file
+  instead. Opening links never writes anything; the settings window shows
+  *Read from:* with the old path on its *About* page.
+- The first *Apply* or *OK* in the settings saves to `klinker/config.json`.
+  From then on only the new file is used. The old file is never changed,
+  moved or deleted; remove it yourself once you no longer need it (an
+  installed copy of the old version still uses it).
+- If either file changed since the settings were loaded (for example, the
+  old version saved its file, or another Klinker window saved the new one),
+  saving is refused and nothing is written; use *Reload from Disk*. A
+  malformed old file is reported like a malformed new one and is never
+  imported: fix it, or move it away to start with defaults.
+- With `--config FILE`, only `FILE` is used; the old file is never read.
 
 ## Example
 
@@ -55,6 +75,12 @@ or any history.
     "privacy": {
         "stripTrackingParameters": false,
         "unwrapRedirects": false
+    },
+    "chooser": {
+        "style": "horizontal",
+        "iconSize": 64,
+        "showBrowserNames": true,
+        "closeOnFocusLoss": false
     }
 }
 ```
@@ -67,6 +93,7 @@ or any history.
 | `browsers` | array   | `[]`    | Browser order and per-browser settings. |
 | `rules`    | array   | `[]`    | Routing rules, evaluated top to bottom. |
 | `privacy`  | object  | all off | URL preprocessing switches. |
+| `chooser`  | object  | vertical list | How the chooser looks and when it closes. |
 
 ## `browsers`
 
@@ -94,7 +121,8 @@ apply. "Reset to defaults" in the settings removes these keys.
 The URL is passed as an argument, never through a shell. Every argument that
 contains `{url}` has it replaced by the URL (so `--app={url}` works); if no
 argument contains `{url}`, the URL is appended as the last argument. Commands
-are rejected if they would start kde-browser-switcher itself, if it is not clear
+are rejected if they would start Klinker itself (under its current or its
+earlier name, `klinker` or `kde-browser-switcher`), if it is not clear
 which program they run (for example `env -S …`, or an `env` option the
 application does not know), or if they could hand the URL to a shell as code.
 Shells (`sh`, `bash`, `zsh`, `fish`, …) are never given a command string: any
@@ -153,6 +181,24 @@ Both switches are off by default.
 |---------------------------|---------|
 | `stripTrackingParameters` | Remove known tracking query parameters (`utm_*`, `gclid`, `dclid`, `gbraid`, `wbraid`, `gclsrc`, `fbclid`, `msclkid`, `mc_cid`, `mc_eid`, `yclid`, `twclid`, `ttclid`, `igshid`, `_hsenc`, `_hsmi`, `mkt_tok`) from http(s) URLs. Names are compared exactly after percent-decoding. Everything else in the URL is kept byte for byte, including empty query components (`?&utm_source=x&` becomes `?&`); the `?` is dropped only when the query held nothing but tracking parameters. |
 | `unwrapRedirects`         | Follow up to three HTTP redirects in the background before routing. **Privacy notice:** this contacts the link's server before you choose a browser. |
+
+## `chooser`
+
+Every key is optional; a file without `chooser` (such as one written by
+Browser Switcher) gets the vertical list.
+
+| Key                | Type    | Default      | Meaning |
+|--------------------|---------|--------------|---------|
+| `style`            | string  | `"vertical"` | `"vertical"`: a list with each browser's name and command. `"horizontal"`: a strip of icons side by side that scrolls when they do not fit. |
+| `iconSize`         | integer | `48`         | Icon size of the horizontal strip in logical pixels, from 24 to 128. |
+| `showBrowserNames` | boolean | `true`       | Horizontal only: show each name under its icon. Names are always in the tooltip and for screen readers. |
+| `closeOnFocusLoss` | boolean | `false`      | Cancel the link, as Esc does, when another application takes the focus from the chooser. |
+
+`iconSize` and `showBrowserNames` are kept while the vertical list is used, so
+switching back restores them. Values are checked, not adjusted: a `style`
+other than the two above (they are lowercase), an `iconSize` that is not a
+whole number from 24 to 128, or a value of the wrong type makes the whole file
+invalid, as described below.
 
 ## Errors and safety
 

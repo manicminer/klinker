@@ -11,7 +11,7 @@ namespace kbs
 
 // Desktop file ID without ".desktop"; also the icon name.
 inline constexpr QStringView AppId = u"" KBS_APP_ID;
-inline constexpr QStringView AppDisplayName = u"Browser Switcher";
+inline constexpr QStringView AppDisplayName = u"Klinker";
 
 // The themed application icon, or the bundled SVG when it is not installed.
 QIcon appIcon();

@@ -9,7 +9,10 @@
 #include <QGuiApplication>
 #include <QLabel>
 #include <QLineEdit>
+#include <QDialog>
 #include <QListView>
+#include <QMenu>
+#include <QProcess>
 #include <QPushButton>
 #include <QScopeGuard>
 #include <QScreen>
@@ -49,13 +52,26 @@ QList<ChooserEntry> entries(int count)
 
 const QString Url = u"https://example.com/articles/2024/a-very-long-path/that-goes-on/and-on?page=2&sort=asc#comments"_s;
 
+kbs::ChooserSettings horizontal(int iconSize = 48, bool names = true)
+{
+    return {kbs::ChooserStyle::Horizontal, iconSize, names, false};
+}
+
+kbs::ChooserSettings closingOnFocusLoss()
+{
+    kbs::ChooserSettings preferences;
+    preferences.closeOnFocusLoss = true;
+    return preferences;
+}
+
 struct Fixture {
     ChooserWindow window;
     QListView *list = nullptr;
 
     // The list gets keyboard focus on its own; tests do not give it focus.
-    explicit Fixture(int count = 3, bool busy = false)
+    explicit Fixture(int count = 3, bool busy = false, const kbs::ChooserSettings &preferences = {})
     {
+        window.setPreferences(preferences);
         window.setOriginalUrl(Url);
         if (busy) {
             window.setBusy(u"Following redirects…"_s);
@@ -152,6 +168,75 @@ double contrast(const QColor &a, const QColor &b)
     return (std::max(la, lb) + 0.05) / (std::min(la, lb) + 0.05);
 }
 
+// Wayland tests that start another application only run in the private,
+// nested KWin of tests/wayland-smoke.sh, never on a desktop.
+bool inPrivateWaylandSession(QString *why)
+{
+    if (!QGuiApplication::platformName().startsWith(u"wayland"_s)) {
+        *why = u"needs QT_QPA_PLATFORM=wayland"_s;
+        return false;
+    }
+    if (qEnvironmentVariableIsEmpty("KBS_SMOKE_RUNTIME_DIR") || qEnvironmentVariable("WAYLAND_DISPLAY") != u"kbs-smoke"_s) {
+        *why = u"only runs in the private KWin of tests/wayland-smoke.sh"_s;
+        return false;
+    }
+    return true;
+}
+
+// Another application with a window (tests/fixtures/focusfixture.cpp), in the
+// same private Wayland session.
+class FocusFixture
+{
+public:
+    ~FocusFixture()
+    {
+        stop();
+    }
+
+    bool start()
+    {
+        m_process.setProcessChannelMode(QProcess::SeparateChannels);
+        m_process.start(QStringLiteral(KBS_FOCUS_FIXTURE), {u"15000"_s});
+        return m_process.waitForStarted(5000);
+    }
+
+    // It printed that it has the keyboard focus.
+    bool focused()
+    {
+        m_output += m_process.readAllStandardOutput();
+        return m_output.contains("focused");
+    }
+
+    void stop()
+    {
+        if (m_process.state() != QProcess::NotRunning) {
+            m_process.kill();
+            m_process.waitForFinished(5000);
+        }
+    }
+
+private:
+    QProcess m_process;
+    QByteArray m_output;
+};
+
+// Keeps WindowActivate events from a widget.
+class ActivationBlocker : public QObject
+{
+public:
+    int blocked = 0;
+
+protected:
+    bool eventFilter(QObject *, QEvent *event) override
+    {
+        if (event->type() == QEvent::WindowActivate) {
+            ++blocked;
+            return true;
+        }
+        return false;
+    }
+};
+
 template<typename T>
 T *child(QWidget *parent, const QString &name)
 {
@@ -192,6 +277,7 @@ private Q_SLOTS:
         QVERIFY(first.data(Qt::AccessibleTextRole).toString().contains(u"Firefox"_s));
         QVERIFY(first.data(Qt::AccessibleTextRole).toString().contains(u"1"_s));
         QVERIFY(!f.list->accessibleName().isEmpty());
+        QCOMPARE(f.window.windowTitle(), u"Open link with — Klinker"_s);
     }
 
     void numberKeysChooseTheVisibleRow()
@@ -766,11 +852,595 @@ private Q_SLOTS:
         kbs::test::applyTheme(false);
     }
 
+    // Horizontal chooser
+
+    void verticalIsTheDefault()
+    {
+        ChooserWindow window;
+        QCOMPARE(window.preferences(), kbs::ChooserSettings());
+        Fixture f(3);
+        QCOMPARE(f.list->flow(), QListView::TopToBottom);
+        QCOMPARE(f.window.preferredSize().width(), ChooserWindow::CardWidth);
+        QCOMPARE(f.rowRect(1).left(), f.rowRect(0).left());
+        QCOMPARE(f.rowRect(1).top(), f.rowRect(0).bottom() + 1);
+    }
+
+    void horizontalTilesSitSideBySide_data()
+    {
+        QTest::addColumn<int>("iconSize");
+        QTest::addColumn<bool>("names");
+        QTest::newRow("48 with names") << 48 << true;
+        QTest::newRow("48 icons only") << 48 << false;
+        QTest::newRow("24 with names") << 24 << true;
+        QTest::newRow("24 icons only") << 24 << false;
+        QTest::newRow("128 with names") << 128 << true;
+        QTest::newRow("128 icons only") << 128 << false;
+    }
+
+    void horizontalTilesSitSideBySide()
+    {
+        QFETCH(int, iconSize);
+        QFETCH(bool, names);
+        Fixture f(5, false, horizontal(iconSize, names));
+        QCOMPARE(f.window.preferences(), horizontal(iconSize, names));
+        QCOMPARE(f.list->flow(), QListView::LeftToRight);
+        QVERIFY(!f.list->isWrapping());
+        const QRect first = f.rowRect(0);
+        for (int i = 1; i < 5; ++i) {
+            const QRect tile = f.rowRect(i);
+            QCOMPARE(tile.size(), first.size());
+            QCOMPARE(tile.top(), first.top());
+            QCOMPARE(tile.left(), first.left() + i * first.width());
+        }
+        // At the natural size every tile is in view and nothing scrolls.
+        QCOMPARE(f.list->horizontalScrollBar()->maximum(), 0);
+        QCOMPARE(f.list->verticalScrollBar()->maximum(), 0);
+        QVERIFY(f.list->viewport()->rect().contains(f.rowRect(4)));
+        QVERIFY(first.width() >= iconSize);
+        const int nameHeight = f.list->fontMetrics().height();
+        if (names) {
+            QVERIFY(first.height() >= iconSize + nameHeight);
+            QVERIFY(first.width() >= iconSize + 8);
+        } else {
+            // Square, with padding but no room for a name.
+            QCOMPARE(first.width(), first.height());
+            Fixture named(5, false, horizontal(iconSize, true));
+            QVERIFY(first.height() + nameHeight <= named.rowRect(0).height());
+            QVERIFY2(first.height() - iconSize <= 32, qPrintable(u"tile %1 for icon %2"_s.arg(first.height()).arg(iconSize)));
+        }
+    }
+
+    void horizontalWidthFollowsTheIcons()
+    {
+        Fixture two(2, false, horizontal(48, false));
+        Fixture eight(8, false, horizontal(48, false));
+        Fixture large(8, false, horizontal(96, false));
+        const int width = two.window.preferredSize().width();
+        QVERIFY2(width < ChooserWindow::CardWidth, qPrintable(QString::number(width)));
+        QVERIFY(eight.window.preferredSize().width() > width);
+        QVERIFY(large.window.preferredSize().width() > eight.window.preferredSize().width());
+        // A few icons are not stretched across the card, but centred.
+        QCOMPARE(two.list->width(), 2 * two.rowRect(0).width() + 2 * two.list->frameWidth());
+        QVERIFY(std::abs(two.list->geometry().center().x() - two.window.rect().center().x()) <= 1);
+    }
+
+    void horizontalNamesAreAlwaysInTooltipsAndAccessibleNames()
+    {
+        Fixture f(12, false, horizontal(48, false));
+        const QModelIndex first = f.list->model()->index(0, 0);
+        QCOMPARE(first.data(Qt::AccessibleTextRole).toString(), u"Firefox, press 1"_s);
+        const QString tip = first.data(Qt::ToolTipRole).toString();
+        QVERIFY2(tip.contains(u"Firefox"_s) && tip.contains(u"1"_s) && tip.contains(u"firefox · Detected"_s), qPrintable(tip));
+        const QModelIndex tenth = f.list->model()->index(9, 0);
+        QCOMPARE(tenth.data(Qt::AccessibleTextRole).toString(), u"qutebrowser"_s);
+        QVERIFY(tenth.data(Qt::ToolTipRole).toString().contains(u"qutebrowser"_s));
+        // Markup in a name is shown literally.
+        f.window.setBrowsers({{u"x.desktop"_s, u"<b>Bold</b>"_s, QString(), u"x"_s}});
+        QVERIFY(f.list->model()->index(0, 0).data(Qt::ToolTipRole).toString().contains(u"&lt;b&gt;Bold"_s));
+    }
+
+    void horizontalKeysAndClicksChoose()
+    {
+        Fixture f(12, false, horizontal(48, false));
+        QSignalSpy chosen(&f.window, &ChooserWindow::browserChosen);
+        QCOMPARE(QApplication::focusWidget(), f.list);
+        press(&f.window, Qt::Key_9);
+        QTRY_COMPARE(chosen.size(), 1);
+        QCOMPARE(chosen.takeFirst().at(0).toString(), u"b9.desktop"_s);
+
+        QTest::mouseClick(f.list->viewport(), Qt::LeftButton, {}, f.rowRect(1).center());
+        QCOMPARE(chosen.size(), 1);
+        QCOMPARE(chosen.takeFirst().at(0).toString(), u"b2.desktop"_s);
+
+        // Left and right move along the strip.
+        press(&f.window, Qt::Key_Right);
+        press(&f.window, Qt::Key_Right);
+        press(&f.window, Qt::Key_Left);
+        press(&f.window, Qt::Key_Return);
+        QTRY_COMPARE(chosen.size(), 1);
+        QCOMPARE(chosen.takeFirst().at(0).toString(), u"b3.desktop"_s);
+
+        // Numbers follow what is shown after filtering.
+        QTest::keyClicks(f.list, u"o"_s);
+        auto *filter = child<QLineEdit>(&f.window, u"filterEdit"_s);
+        QVERIFY(filter->hasFocus());
+        QTest::keyClick(filter, Qt::Key_Down);
+        QVERIFY(f.list->hasFocus());
+        QTest::keyClick(f.list, Qt::Key_3);
+        QCOMPARE(chosen.size(), 1);
+        QCOMPARE(chosen.takeFirst().at(0).toString(), u"b5.desktop"_s);
+    }
+
+    void horizontalLongListsScroll()
+    {
+        Fixture f(30, false, horizontal(64, true));
+        const QSize natural = f.window.preferredSize();
+        const QSize narrow = f.window.preferredSize(QSize(600, 2000));
+        QCOMPARE(narrow.width(), 600);
+        // When the icons do not fit, there is room for a scroll bar below them.
+        QVERIFY(narrow.height() > natural.height());
+        QCOMPARE(f.window.preferredSize(QSize(natural.width(), 2000)), natural);
+        f.window.resize(narrow);
+        QTRY_VERIFY(f.list->horizontalScrollBar()->maximum() > 0);
+        QCOMPARE(f.list->verticalScrollBar()->maximum(), 0);
+        QVERIFY(f.list->viewport()->height() >= f.rowRect(0).height());
+        QString why;
+        QVERIFY2(reachable(child<QWidget>(&f.window, u"cancelButton"_s), &f.window, &why), qPrintable(why));
+
+        QCOMPARE(QApplication::focusWidget(), f.list);
+        for (int i = 0; i < 25; ++i) {
+            press(&f.window, Qt::Key_Right);
+        }
+        QTRY_COMPARE(f.list->currentIndex().row(), 25);
+        QVERIFY(f.list->viewport()->rect().contains(f.rowRect(25)));
+        QSignalSpy chosen(&f.window, &ChooserWindow::browserChosen);
+        press(&f.window, Qt::Key_Return);
+        QTRY_COMPARE(chosen.size(), 1);
+        QCOMPARE(chosen.takeFirst().at(0).toString(), u"b26.desktop"_s);
+        press(&f.window, Qt::Key_Home);
+        QTRY_VERIFY(f.list->viewport()->rect().contains(f.rowRect(0)));
+    }
+
+    void horizontalCardFitsASmallScreen_data()
+    {
+        QTest::addColumn<int>("iconSize");
+        QTest::addColumn<QRect>("screen");
+        QTest::newRow("48 px on 400x320") << 48 << QRect(0, 0, 400, 320);
+        QTest::newRow("128 px on 400x280") << 128 << QRect(-400, -50, 400, 280);
+    }
+
+    // Large icons on a small screen: the window stays on the screen and every
+    // browser, the link and the footer can still be reached.
+    void horizontalCardFitsASmallScreen()
+    {
+        QFETCH(int, iconSize);
+        QFETCH(QRect, screen);
+        ChooserWindow window;
+        window.setPreferences(horizontal(iconSize, true));
+        window.setOriginalUrl(Url);
+        window.setFinalUrl(Url, u"Opened as received."_s);
+        window.setBrowsers(entries(12));
+
+        kbs::PlacementRequest request;
+        request.preferredSize = window.preferredSize(kbs::maximumSize(screen, 8));
+        request.screens = {{u"small"_s, screen, screen}};
+        request.primaryOutput = u"small"_s;
+        const kbs::Placement placement = kbs::planPlacement(request);
+        QVERIFY(screen.adjusted(8, 8, -8, -8).contains(placement.geometry));
+        window.resize(placement.geometry.size());
+        window.show();
+        window.activateWindow();
+        QVERIFY(QTest::qWaitForWindowActive(&window));
+        QCOMPARE(window.size(), placement.geometry.size());
+
+        QString why;
+        for (const QString &name : {u"finalUrlLabel"_s, u"copyUrlButton"_s, u"detailsButton"_s, u"settingsButton"_s, u"cancelButton"_s}) {
+            QVERIFY2(reachable(child<QWidget>(&window, name), &window, &why), qPrintable(why));
+        }
+        auto *list = child<QListView>(&window, u"browserList"_s);
+        const QRect listRect(list->mapTo(&window, QPoint()), list->size());
+        QVERIFY(window.rect().contains(listRect));
+        // Whole tiles can be scrolled into view in both directions.
+        const QRect tile = list->visualRect(list->model()->index(0, 0));
+        QVERIFY(list->verticalScrollBar()->maximum() + list->viewport()->height() >= tile.height());
+        QVERIFY(list->horizontalScrollBar()->maximum() > 0);
+        QCOMPARE(QApplication::focusWidget(), list);
+        QSignalSpy chosen(&window, &ChooserWindow::browserChosen);
+        press(&window, Qt::Key_End);
+        press(&window, Qt::Key_Return);
+        QTRY_COMPARE(chosen.size(), 1);
+        QCOMPARE(chosen.takeFirst().at(0).toString(), u"b12.desktop"_s);
+        kbs::test::saveScreenshot(&window, u"chooser-horizontal-small-screen-%1"_s.arg(iconSize));
+    }
+
+    void preferencesApplyToAShownChooser()
+    {
+        Fixture f(4);
+        press(&f.window, Qt::Key_Down);
+        QTRY_COMPARE(f.list->currentIndex().row(), 1);
+        const QSize maximum = kbs::maximumSize(f.window.screen()->availableGeometry(), 8);
+
+        f.window.setPreferences(horizontal(64, false));
+        QCOMPARE(f.list->flow(), QListView::LeftToRight);
+        QCOMPARE(f.rowRect(1).top(), f.rowRect(0).top());
+        QCOMPARE(f.list->currentIndex().row(), 1);
+        QCOMPARE(QApplication::focusWidget(), f.list);
+        QTRY_COMPARE(f.window.size(), f.window.preferredSize(maximum));
+        QSignalSpy chosen(&f.window, &ChooserWindow::browserChosen);
+        press(&f.window, Qt::Key_Right);
+        press(&f.window, Qt::Key_Return);
+        QTRY_COMPARE(chosen.size(), 1);
+        QCOMPARE(chosen.takeFirst().at(0).toString(), u"b3.desktop"_s);
+
+        f.window.setPreferences({});
+        QCOMPARE(f.list->flow(), QListView::TopToBottom);
+        QCOMPARE(f.rowRect(1).left(), f.rowRect(0).left());
+        QCOMPARE(f.window.preferredSize().width(), ChooserWindow::CardWidth);
+        QTRY_COMPARE(f.window.size(), f.window.preferredSize(maximum));
+    }
+
+    void refitKeepsTheChooserOnItsScreen()
+    {
+        Fixture f(3);
+        QScreen *screen = f.window.screen();
+        const QRect available = screen->availableGeometry();
+        f.window.move(available.right() - f.window.width() - 20, available.top() + 40);
+        f.window.hide();
+        f.window.setPreferences(horizontal(96, true));
+        f.window.setBrowsers(entries(12));
+        f.window.refit();
+        QCOMPARE(f.window.screen(), screen);
+        QVERIFY(f.window.width() > ChooserWindow::CardWidth);
+        QCOMPARE(f.window.size(), f.window.preferredSize(kbs::maximumSize(available, 8)));
+        QVERIFY(available.adjusted(8, 8, -8, -8).contains(f.window.geometry()));
+    }
+
+    void horizontalScreenshots_data()
+    {
+        QTest::addColumn<bool>("dark");
+        QTest::newRow("light") << false;
+        QTest::newRow("dark") << true;
+    }
+
+    void horizontalScreenshots()
+    {
+        QFETCH(bool, dark);
+        kbs::test::applyTheme(dark);
+        const QString suffix = dark ? u"dark"_s : u"light"_s;
+        const auto check = [dark](ChooserWindow *window) {
+            const QImage image = window->grab().toImage();
+            const int lightness = kbs::test::meanLightness(image);
+            QVERIFY2(dark ? lightness < 110 : lightness > 150, qPrintable(u"mean lightness %1"_s.arg(lightness)));
+            QCOMPARE(image.pixelColor(0, 0).alpha(), 0);
+        };
+        {
+            Fixture f(6, false, horizontal(48, true));
+            f.window.setFinalUrl(u"https://kde.org/announcements/plasma/6/6.7.0/"_s, u"Opened as received."_s);
+            press(&f.window, Qt::Key_Right);
+            QTRY_COMPARE(f.list->currentIndex().row(), 1);
+            check(&f.window);
+            kbs::test::saveScreenshot(&f.window, u"chooser-horizontal-names-"_s + suffix);
+        }
+        {
+            Fixture f(6, false, horizontal(96, false));
+            check(&f.window);
+            kbs::test::saveScreenshot(&f.window, u"chooser-horizontal-icons-96-"_s + suffix);
+        }
+        {
+            Fixture f(6, false, horizontal(24, false));
+            check(&f.window);
+            kbs::test::saveScreenshot(&f.window, u"chooser-horizontal-icons-24-"_s + suffix);
+        }
+        {
+            Fixture f(30, false, horizontal(64, true));
+            f.window.resize(f.window.preferredSize(QSize(640, 2000)));
+            for (int i = 0; i < 8; ++i) {
+                press(&f.window, Qt::Key_Right);
+            }
+            QTRY_COMPARE(f.list->currentIndex().row(), 8);
+            check(&f.window);
+            kbs::test::saveScreenshot(&f.window, u"chooser-horizontal-many-constrained-"_s + suffix);
+        }
+        kbs::test::applyTheme(false);
+    }
+
+    // Closing on focus loss
+
+    void focusLossIsIgnoredByDefault()
+    {
+        Fixture f(3);
+        QVERIFY(!f.window.preferences().closeOnFocusLoss);
+        QSignalSpy cancelled(&f.window, &ChooserWindow::cancelled);
+        kbs::test::focusOtherApplication();
+        QVERIFY(!f.window.isActiveWindow());
+        QTest::qWait(ChooserWindow::FocusLossDelayMs + 150);
+        QCOMPARE(cancelled.size(), 0);
+        QVERIFY(f.window.isVisible());
+    }
+
+    void focusLossCancelsOnce()
+    {
+        Fixture f(3, false, closingOnFocusLoss());
+        QVERIFY(f.window.isActiveWindow());
+        QSignalSpy cancelled(&f.window, &ChooserWindow::cancelled);
+        QSignalSpy chosen(&f.window, &ChooserWindow::browserChosen);
+        kbs::test::focusOtherApplication();
+        QTRY_COMPARE(cancelled.size(), 1);
+        kbs::test::focusWindow(&f.window);
+        QTRY_VERIFY(f.window.isActiveWindow());
+        kbs::test::focusOtherApplication();
+        QTest::qWait(ChooserWindow::FocusLossDelayMs + 150);
+        QCOMPARE(cancelled.size(), 1);
+        QCOMPARE(chosen.size(), 0);
+    }
+
+    void focusLossWhileBusyCancels()
+    {
+        Fixture f(3, true, closingOnFocusLoss());
+        QVERIFY(f.window.isBusy());
+        QSignalSpy cancelled(&f.window, &ChooserWindow::cancelled);
+        kbs::test::focusOtherApplication();
+        QTRY_COMPARE(cancelled.size(), 1);
+    }
+
+    // The window may never get the focus (for example while it starts, or if
+    // the compositor refuses): then there is nothing it could have lost.
+    void aChooserThatWasNeverActiveStays()
+    {
+        ChooserWindow window;
+        window.setPreferences(closingOnFocusLoss());
+        window.setFinalUrl(Url, QString());
+        window.setBrowsers(entries(3));
+        // The offscreen platform activates every window it shows; here the
+        // window is never told, as if the compositor had not given it the focus.
+        ActivationBlocker blocker;
+        window.installEventFilter(&blocker);
+        QSignalSpy cancelled(&window, &ChooserWindow::cancelled);
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        QCoreApplication::processEvents();
+        kbs::test::focusOtherApplication();
+        QTest::qWait(ChooserWindow::FocusLossDelayMs + 150);
+        QVERIFY(blocker.blocked > 0);
+        QCOMPARE(cancelled.size(), 0);
+
+        // Once it has had the focus, losing it counts.
+        window.removeEventFilter(&blocker);
+        kbs::test::focusWindow(&window);
+        QTRY_VERIFY(window.isActiveWindow());
+        kbs::test::focusOtherApplication();
+        QTRY_COMPARE(cancelled.size(), 1);
+    }
+
+    void movingBetweenControlsKeepsTheChooser()
+    {
+        Fixture f(3, false, closingOnFocusLoss());
+        QSignalSpy cancelled(&f.window, &ChooserWindow::cancelled);
+        for (int i = 0; i < 8; ++i) {
+            press(&f.window, Qt::Key_Tab);
+        }
+        QTest::mouseClick(child<QToolButton>(&f.window, u"detailsButton"_s), Qt::LeftButton);
+        QTest::mouseClick(child<QToolButton>(&f.window, u"copyOriginalButton"_s), Qt::LeftButton);
+        QTest::mouseClick(child<QToolButton>(&f.window, u"copyUrlButton"_s), Qt::LeftButton);
+        QTest::keyClicks(f.list, u"fi"_s);
+        QTest::qWait(ChooserWindow::FocusLossDelayMs + 150);
+        QCOMPARE(cancelled.size(), 0);
+        QVERIFY(f.window.isActiveWindow());
+    }
+
+    void ownMenusAndDialogsKeepTheChooser()
+    {
+        Fixture f(3, false, closingOnFocusLoss());
+        QSignalSpy cancelled(&f.window, &ChooserWindow::cancelled);
+
+        QMenu menu(&f.window);
+        menu.addAction(u"Copy"_s);
+        menu.popup(f.window.mapToGlobal(QPoint(20, 20)));
+        QVERIFY(QTest::qWaitForWindowExposed(&menu));
+        QTest::qWait(ChooserWindow::FocusLossDelayMs + 150);
+        menu.close();
+        QCOMPARE(cancelled.size(), 0);
+
+        QDialog dialog(&f.window);
+        dialog.show();
+        QVERIFY(QTest::qWaitForWindowActive(&dialog));
+        QVERIFY(!f.window.isActiveWindow());
+        QTest::qWait(ChooserWindow::FocusLossDelayMs + 150);
+        QCOMPARE(cancelled.size(), 0);
+        dialog.close();
+        kbs::test::focusWindow(&f.window);
+        QTRY_VERIFY(f.window.isActiveWindow());
+
+        kbs::test::focusOtherApplication();
+        QTRY_COMPARE(cancelled.size(), 1);
+    }
+
+    // The focus can leave and come back at once, e.g. while the compositor
+    // reconfigures the window: only the state after a moment counts.
+    void focusThatComesBackKeepsTheChooser()
+    {
+        Fixture f(3, false, closingOnFocusLoss());
+        QSignalSpy cancelled(&f.window, &ChooserWindow::cancelled);
+        kbs::test::focusOtherApplication();
+        kbs::test::focusWindow(&f.window);
+        QVERIFY(f.window.isActiveWindow());
+        QTest::qWait(ChooserWindow::FocusLossDelayMs + 150);
+        QCOMPARE(cancelled.size(), 0);
+    }
+
+    // Settings hide the chooser on purpose; it is shown again afterwards.
+    void hidingAndShowingAgainStartsOver()
+    {
+        Fixture f(3, false, closingOnFocusLoss());
+        QSignalSpy cancelled(&f.window, &ChooserWindow::cancelled);
+        f.window.hide();
+        kbs::test::focusOtherApplication();
+        QTest::qWait(ChooserWindow::FocusLossDelayMs + 150);
+        QCOMPARE(cancelled.size(), 0);
+
+        f.window.show();
+        QTRY_VERIFY(f.window.isActiveWindow());
+        QTest::qWait(ChooserWindow::FocusLossDelayMs + 150);
+        QCOMPARE(cancelled.size(), 0);
+        kbs::test::focusOtherApplication();
+        QTRY_COMPARE(cancelled.size(), 1);
+    }
+
+    // A check started before hiding belongs to the old showing: it must not
+    // close the window shown again before that has had the focus.
+    void aStaleCheckCannotCloseTheChooserShownAgain()
+    {
+        Fixture f(3, false, closingOnFocusLoss());
+        QSignalSpy cancelled(&f.window, &ChooserWindow::cancelled);
+        kbs::test::focusOtherApplication();
+        f.window.hide();
+        ActivationBlocker blocker;
+        f.window.installEventFilter(&blocker);
+        f.window.show();
+        QCoreApplication::processEvents();
+        kbs::test::focusOtherApplication();
+        QTest::qWait(ChooserWindow::FocusLossDelayMs + 150);
+        QCOMPARE(cancelled.size(), 0);
+        QVERIFY(f.window.isVisible());
+
+        f.window.removeEventFilter(&blocker);
+        kbs::test::focusWindow(&f.window);
+        QTRY_VERIFY(f.window.isActiveWindow());
+        kbs::test::focusOtherApplication();
+        QTRY_COMPARE(cancelled.size(), 1);
+    }
+
+    void turningTheOptionOnAppliesToAShownChooser()
+    {
+        Fixture f(3);
+        QSignalSpy cancelled(&f.window, &ChooserWindow::cancelled);
+        f.window.setPreferences(closingOnFocusLoss());
+        kbs::test::focusOtherApplication();
+        QTRY_COMPARE(cancelled.size(), 1);
+    }
+
+    // While a focus loss is being decided the caller holds back automatic
+    // routing; every pending decision ends exactly once, either cancelled or
+    // resolved.
+    void aPendingFocusLossEndsCancelled()
+    {
+        Fixture f(3, true, closingOnFocusLoss());
+        QSignalSpy cancelled(&f.window, &ChooserWindow::cancelled);
+        QSignalSpy resolved(&f.window, &ChooserWindow::focusLossResolved);
+        QVERIFY(!f.window.isFocusLossPending());
+        kbs::test::focusOtherApplication();
+        QVERIFY(f.window.isFocusLossPending());
+        QTRY_COMPARE(cancelled.size(), 1);
+        QVERIFY(!f.window.isFocusLossPending());
+        QTest::qWait(ChooserWindow::FocusLossDelayMs + 150);
+        QCOMPARE(resolved.size(), 0);
+        QCOMPARE(cancelled.size(), 1);
+    }
+
+    void aPendingFocusLossIsResolvedWhenTheFocusComesBack()
+    {
+        Fixture f(3, true, closingOnFocusLoss());
+        QSignalSpy cancelled(&f.window, &ChooserWindow::cancelled);
+        QSignalSpy resolved(&f.window, &ChooserWindow::focusLossResolved);
+        kbs::test::focusOtherApplication();
+        QVERIFY(f.window.isFocusLossPending());
+        kbs::test::focusWindow(&f.window);
+        QVERIFY(!f.window.isFocusLossPending());
+        QCOMPARE(resolved.size(), 1);
+
+        // Lost again: a new decision, and the old check stays stale.
+        kbs::test::focusOtherApplication();
+        QVERIFY(f.window.isFocusLossPending());
+        QTRY_COMPARE(cancelled.size(), 1);
+        QTest::qWait(ChooserWindow::FocusLossDelayMs + 150);
+        QCOMPARE(resolved.size(), 1);
+        QCOMPARE(cancelled.size(), 1);
+    }
+
+    void aPendingFocusLossIsResolvedByHiding()
+    {
+        Fixture f(3, true, closingOnFocusLoss());
+        QSignalSpy cancelled(&f.window, &ChooserWindow::cancelled);
+        QSignalSpy resolved(&f.window, &ChooserWindow::focusLossResolved);
+        kbs::test::focusOtherApplication();
+        QVERIFY(f.window.isFocusLossPending());
+        f.window.hide();
+        QVERIFY(!f.window.isFocusLossPending());
+        QCOMPARE(resolved.size(), 1);
+        QTest::qWait(ChooserWindow::FocusLossDelayMs + 150);
+        QCOMPARE(resolved.size(), 1);
+        QCOMPARE(cancelled.size(), 0);
+
+        // Shown again it starts over; nothing is pending until it loses the focus.
+        f.window.show();
+        QTRY_VERIFY(f.window.isActiveWindow());
+        QVERIFY(!f.window.isFocusLossPending());
+        kbs::test::focusOtherApplication();
+        QVERIFY(f.window.isFocusLossPending());
+        QTRY_COMPARE(cancelled.size(), 1);
+        QCOMPARE(resolved.size(), 1);
+    }
+
+    // A window of this application took the focus: resolved after the delay.
+    void aPendingFocusLossIsResolvedByAnOwnDialog()
+    {
+        Fixture f(3, true, closingOnFocusLoss());
+        QSignalSpy cancelled(&f.window, &ChooserWindow::cancelled);
+        QSignalSpy resolved(&f.window, &ChooserWindow::focusLossResolved);
+        QDialog dialog(&f.window);
+        dialog.show();
+        QVERIFY(QTest::qWaitForWindowActive(&dialog));
+        // Only a pending decision is resolved.
+        QTRY_COMPARE(resolved.size(), 1);
+        QVERIFY(!f.window.isFocusLossPending());
+        QTest::qWait(ChooserWindow::FocusLossDelayMs + 150);
+        QCOMPARE(resolved.size(), 1);
+        QCOMPARE(cancelled.size(), 0);
+    }
+
+    void nothingIsPendingWithoutTheOptionOrPriorFocus()
+    {
+        {
+            Fixture f(3, true);
+            kbs::test::focusOtherApplication();
+            QVERIFY(!f.window.isFocusLossPending());
+        }
+        ChooserWindow window;
+        window.setPreferences(closingOnFocusLoss());
+        window.setBusy(u"Following redirects…"_s);
+        window.setBrowsers(entries(3));
+        ActivationBlocker blocker;
+        window.installEventFilter(&blocker);
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        QCoreApplication::processEvents();
+        kbs::test::focusOtherApplication();
+        QVERIFY(!window.isFocusLossPending());
+    }
+
+    // Dismissed by the caller (after a choice): the decision is dropped silently.
+    void dismissingDropsAPendingFocusLoss()
+    {
+        Fixture f(3, true, closingOnFocusLoss());
+        QSignalSpy cancelled(&f.window, &ChooserWindow::cancelled);
+        QSignalSpy resolved(&f.window, &ChooserWindow::focusLossResolved);
+        kbs::test::focusOtherApplication();
+        QVERIFY(f.window.isFocusLossPending());
+        f.window.dismiss();
+        QVERIFY(!f.window.isFocusLossPending());
+        QTest::qWait(ChooserWindow::FocusLossDelayMs + 150);
+        QCOMPARE(resolved.size(), 0);
+        QCOMPARE(cancelled.size(), 0);
+    }
+
     void waylandLayerShellPopup_data()
     {
         QTest::addColumn<bool>("busy");
-        QTest::newRow("ready") << false;
-        QTest::newRow("busy, then ready") << true;
+        QTest::addColumn<kbs::ChooserSettings>("preferences");
+        QTest::newRow("ready") << false << kbs::ChooserSettings();
+        QTest::newRow("busy, then ready") << true << kbs::ChooserSettings();
+        QTest::newRow("horizontal") << false << horizontal(64, true);
+        QTest::newRow("horizontal, busy, then ready") << true << horizontal(48, false);
     }
 
     // Wayland only: QT_QPA_PLATFORM=wayland ./test_chooser waylandLayerShellPopup
@@ -783,7 +1453,9 @@ private Q_SLOTS:
         QSKIP("built without LayerShellQt");
 #else
         QFETCH(bool, busy);
+        QFETCH(kbs::ChooserSettings, preferences);
         ChooserWindow window;
+        window.setPreferences(preferences);
         window.setOriginalUrl(Url);
         if (busy) {
             window.setBusy(u"Following redirects…"_s);
@@ -791,7 +1463,9 @@ private Q_SLOTS:
             window.setFinalUrl(Url, u"Opened as received."_s);
         }
         window.setBrowsers(entries(5));
-        const kbs::PopupPlacement placed = kbs::placePopup(&window, window.preferredSize());
+        const kbs::PopupPlacement placed = kbs::placePopup(&window, [&window](const QSize &maximum) {
+            return window.preferredSize(maximum);
+        });
         QVERIFY(placed.layerShell);
         QCOMPARE(placed.placement.mode, kbs::PlacementMode::Centered);
         // Under KWin the active output comes from D-Bus; elsewhere the primary screen is used.
@@ -833,8 +1507,127 @@ private Q_SLOTS:
         press(&window, Qt::Key_2);
         // With accessibility active, the AT-SPI bridge delivers key events asynchronously.
         QTRY_COMPARE(chosen.size(), 1);
-        QCOMPARE(chosen.first().at(0).toString(), u"b2.desktop"_s);
-        kbs::test::saveScreenshot(&window, busy ? u"chooser-wayland-layershell-after-busy"_s : u"chooser-wayland-layershell"_s);
+        QCOMPARE(chosen.takeFirst().at(0).toString(), u"b2.desktop"_s);
+        if (preferences.style == kbs::ChooserStyle::Horizontal) {
+            QCOMPARE(list->flow(), QListView::LeftToRight);
+            press(&window, Qt::Key_Right);
+            press(&window, Qt::Key_Right);
+            press(&window, Qt::Key_Left);
+            press(&window, Qt::Key_Return);
+            QTRY_COMPARE(chosen.size(), 1);
+            QCOMPARE(chosen.takeFirst().at(0).toString(), u"b2.desktop"_s);
+        }
+        kbs::test::saveScreenshot(&window, u"chooser-wayland-layershell-%1"_s.arg(QString::fromLatin1(QTest::currentDataTag()).replace(u", "_s, u"-"_s).replace(u' ', u'-')));
+#endif
+    }
+
+    // Wayland only, in the private KWin of tests/wayland-smoke.sh: another
+    // application really takes the keyboard focus from the layer-shell chooser.
+    void waylandFocusLoss_data()
+    {
+        QTest::addColumn<bool>("closeOnFocusLoss");
+        QTest::newRow("option off") << false;
+        QTest::newRow("option on") << true;
+    }
+
+    void waylandFocusLoss()
+    {
+        if (QString why; !inPrivateWaylandSession(&why)) {
+            QSKIP(qPrintable(why));
+        }
+#ifndef KBS_HAVE_LAYERSHELLQT
+        QSKIP("built without LayerShellQt");
+#else
+        QFETCH(bool, closeOnFocusLoss);
+        ChooserWindow window;
+        kbs::ChooserSettings preferences = horizontal(48, true);
+        preferences.closeOnFocusLoss = closeOnFocusLoss;
+        window.setPreferences(preferences);
+        window.setOriginalUrl(Url);
+        window.setFinalUrl(Url, u"Opened as received."_s);
+        window.setBrowsers(entries(4));
+        QVERIFY(kbs::placePopup(&window, window.preferredSize()).layerShell);
+        QSignalSpy cancelled(&window, &ChooserWindow::cancelled);
+        window.show();
+        QVERIFY(QTest::qWaitForWindowActive(&window));
+
+        // Moving between its own controls is not losing the focus.
+        press(&window, Qt::Key_Tab);
+        press(&window, Qt::Key_Tab);
+        QTest::qWait(ChooserWindow::FocusLossDelayMs + 300);
+        QCOMPARE(cancelled.size(), 0);
+        QVERIFY(window.isActiveWindow());
+
+        FocusFixture other;
+        QVERIFY2(other.start(), "the focus fixture did not start");
+        QTRY_VERIFY_WITH_TIMEOUT(other.focused(), 10000);
+        QTRY_VERIFY(!window.isActiveWindow());
+        if (closeOnFocusLoss) {
+            QTRY_COMPARE(cancelled.size(), 1);
+        } else {
+            QTest::qWait(ChooserWindow::FocusLossDelayMs + 500);
+            QCOMPARE(cancelled.size(), 0);
+            QVERIFY(window.isVisible());
+        }
+        QTest::qWait(ChooserWindow::FocusLossDelayMs + 300);
+        QCOMPARE(cancelled.size(), closeOnFocusLoss ? 1 : 0);
+#endif
+    }
+
+    // Wayland only, in the private KWin: the chooser's own popup menu and a
+    // dialog of the application take the focus without closing it, and while
+    // it is hidden for the settings, another application may have the focus.
+    void waylandOwnPopupKeepsTheChooser()
+    {
+        if (QString why; !inPrivateWaylandSession(&why)) {
+            QSKIP(qPrintable(why));
+        }
+#ifndef KBS_HAVE_LAYERSHELLQT
+        QSKIP("built without LayerShellQt");
+#else
+        ChooserWindow window;
+        window.setPreferences(closingOnFocusLoss());
+        window.setOriginalUrl(Url);
+        window.setFinalUrl(Url, u"Opened as received."_s);
+        window.setBrowsers(entries(4));
+        QVERIFY(kbs::placePopup(&window, window.preferredSize()).layerShell);
+        QSignalSpy cancelled(&window, &ChooserWindow::cancelled);
+        window.show();
+        QVERIFY(QTest::qWaitForWindowActive(&window));
+
+        QMenu menu(&window);
+        menu.addAction(u"One"_s);
+        menu.addAction(u"Two"_s);
+        menu.popup(window.mapToGlobal(QPoint(40, 40)));
+        QVERIFY(QTest::qWaitForWindowExposed(&menu));
+        QTest::qWait(ChooserWindow::FocusLossDelayMs + 300);
+        QCOMPARE(cancelled.size(), 0);
+        menu.close();
+        QTRY_VERIFY(window.isActiveWindow());
+
+        // Like the settings: the chooser steps aside for a window of its own.
+        window.hide();
+        QDialog dialog;
+        dialog.setWindowTitle(u"Settings stand-in"_s);
+        dialog.show();
+        QVERIFY(QTest::qWaitForWindowActive(&dialog));
+        FocusFixture other;
+        QVERIFY2(other.start(), "the focus fixture did not start");
+        QTRY_VERIFY_WITH_TIMEOUT(other.focused(), 10000);
+        QTest::qWait(ChooserWindow::FocusLossDelayMs + 300);
+        QCOMPARE(cancelled.size(), 0);
+        other.stop();
+        dialog.close();
+
+        // Shown again, it has the focus and losing it counts once more.
+        window.show();
+        QVERIFY(QTest::qWaitForWindowActive(&window));
+        QTest::qWait(ChooserWindow::FocusLossDelayMs + 300);
+        QCOMPARE(cancelled.size(), 0);
+        FocusFixture again;
+        QVERIFY2(again.start(), "the focus fixture did not start");
+        QTRY_VERIFY_WITH_TIMEOUT(again.focused(), 10000);
+        QTRY_COMPARE(cancelled.size(), 1);
 #endif
     }
 };

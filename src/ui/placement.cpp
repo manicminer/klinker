@@ -96,6 +96,16 @@ Placement planPlacement(const PlacementRequest &request)
     return {nearCursor ? PlacementMode::NearCursor : PlacementMode::Centered, screen->name, QRect(topLeft, size)};
 }
 
+QRect fitToArea(const QRect &current, QSize preferred, const QRect &available, int margin)
+{
+    const QRect area = innerArea(available, margin);
+    const QSize size = preferred.boundedTo(area.size());
+    QPoint topLeft(current.x() + (current.width() - size.width()) / 2, current.y());
+    topLeft.setX(std::clamp(topLeft.x(), area.left(), area.left() + area.width() - size.width()));
+    topLeft.setY(std::clamp(topLeft.y(), area.top(), area.top() + area.height() - size.height()));
+    return {topLeft, size};
+}
+
 std::optional<QPoint> reliableCursorPosition(const QString &platformName, QPoint position)
 {
     if (platformName == u"xcb"_s) {
@@ -120,9 +130,16 @@ QString kwinActiveOutputName()
 
 PopupPlacement placePopup(QWidget *window, QSize preferredSize)
 {
+    return placePopup(window, [preferredSize](const QSize &) {
+        return preferredSize;
+    });
+}
+
+PopupPlacement placePopup(QWidget *window, const PreferredSizeFunction &preferredSize)
+{
     const QString platform = QGuiApplication::platformName();
     PlacementRequest request;
-    request.preferredSize = preferredSize;
+    request.preferredSize = preferredSize(QSize());
     request.cursor = reliableCursorPosition(platform, QCursor::pos());
     const QList<QScreen *> screens = QGuiApplication::screens();
     for (const QScreen *screen : screens) {
@@ -137,8 +154,15 @@ PopupPlacement placePopup(QWidget *window, QSize preferredSize)
 
     PopupPlacement result{planPlacement(request), false};
     if (!result.placement.isValid()) {
-        window->resize(preferredSize);
+        window->resize(request.preferredSize);
         return result;
+    }
+    if (result.placement.geometry.size() != request.preferredSize) {
+        // Too large for the chosen screen: plan again with the size for what
+        // fits there. The screen does not depend on the size.
+        const auto chosen = std::ranges::find(request.screens, result.placement.screenName, &ScreenInfo::name);
+        request.preferredSize = preferredSize(maximumSize(chosen->available, request.margin));
+        result.placement = planPlacement(request);
     }
 
     QScreen *screen = nullptr;
@@ -155,7 +179,7 @@ PopupPlacement placePopup(QWidget *window, QSize preferredSize)
         // role can still be assigned.
         window->winId();
         if (LayerShellQt::Window *layer = LayerShellQt::Window::get(window->windowHandle())) {
-            layer->setScope(u"kde-browser-switcher"_s);
+            layer->setScope(u"klinker"_s);
             layer->setLayer(LayerShellQt::Window::LayerTop);
             layer->setAnchors(LayerShellQt::Window::AnchorNone);
             layer->setExclusiveZone(0);

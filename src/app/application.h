@@ -24,14 +24,19 @@ SelfIdentity appSelfIdentity();
 // showing the chooser when no rule applies; settings can be opened at any time.
 // Nothing is saved unless the user saves the settings. While the settings are
 // open nothing is routed or launched; saving different privacy settings starts
-// the current link again from the original URL.
+// the current link again from the original URL. Nor is anything routed while
+// the chooser decides whether losing the focus cancels the link
+// (ChooserWindow::isFocusLossPending()): a cancellation drops the link, and
+// otherwise it is routed once that is decided.
 class Application : public QObject
 {
     Q_OBJECT
 
 public:
     struct Options {
-        QString configPath; // empty: ConfigStore::defaultPath()
+        // Empty: ConfigStore::defaultPath(), read from legacyDefaultPath() while
+        // it does not exist. A given path is used as it is.
+        QString configPath;
         std::optional<QStringList> dataDirs; // empty: defaultDataDirs()
         bool alwaysChoose = false; // --choose
         SelfIdentity self = appSelfIdentity();
@@ -47,6 +52,9 @@ public:
     ChooserWindow *chooser() const;
     SettingsDialog *settingsDialog() const;
     bool isIdle() const;
+    // The current link is ready but its routing waits: for the settings to
+    // close, or for the chooser's focus-loss decision.
+    bool isRoutingDeferred() const;
 
 Q_SIGNALS:
     void launched(const QString &browserId, const QString &url);
@@ -78,7 +86,7 @@ private:
     QString m_currentUrl; // as received, while m_busy
     std::optional<ProcessedLink> m_current;
     bool m_busy = false; // a link is being processed or decided
-    bool m_routePending = false; // m_current became ready while the settings were open
+    bool m_routePending = false; // m_current became ready while the settings were open or a focus loss was pending
     QPointer<ChooserWindow> m_chooser;
     QPointer<SettingsDialog> m_settings;
 };

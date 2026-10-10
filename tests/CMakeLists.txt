@@ -20,18 +20,24 @@ target_link_libraries(test_redirectresolver PRIVATE kbs_network)
 add_executable(kbs_capture_fixture fixtures/capture.cpp)
 target_link_libraries(kbs_capture_fixture PRIVATE Qt6::Core)
 
+# A second application that takes the focus, only started by Wayland tests
+# inside the private nested KWin.
+add_executable(kbs_focus_fixture fixtures/focusfixture.cpp)
+target_link_libraries(kbs_focus_fixture PRIVATE Qt6::Widgets)
+
 # GUI tests run offscreen by default. Run them with QT_QPA_PLATFORM=wayland
 # (see tests/wayland-smoke.sh) to exercise layer-shell placement for real, and
 # set KBS_SCREENSHOT_DIR to keep the screenshots they take.
 function(kbs_add_gui_test name)
     add_executable(${name} ${name}.cpp ${ARGN})
-    target_link_libraries(${name} PRIVATE kbs_app Qt6::Test KF6::IconThemes KF6::ColorScheme KF6::ConfigCore)
+    target_link_libraries(${name} PRIVATE kbs_app Qt6::Test Qt6::GuiPrivate KF6::IconThemes KF6::ColorScheme KF6::ConfigCore)
     target_compile_definitions(${name} PRIVATE
         KBS_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
         KBS_CAPTURE_FIXTURE="$<TARGET_FILE:kbs_capture_fixture>"
-        KBS_APP_EXECUTABLE="$<TARGET_FILE:kde-browser-switcher>")
+        KBS_FOCUS_FIXTURE="$<TARGET_FILE:kbs_focus_fixture>"
+        KBS_APP_EXECUTABLE="$<TARGET_FILE:klinker>")
     target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-    add_dependencies(${name} kbs_capture_fixture kde-browser-switcher)
+    add_dependencies(${name} kbs_capture_fixture kbs_focus_fixture klinker)
     add_test(NAME ${name} COMMAND ${name})
     set_tests_properties(${name} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endfunction()
@@ -50,6 +56,7 @@ endif()
 option(KBS_WAYLAND_TESTS "Run Wayland smoke tests in a nested virtual kwin_wayland" OFF)
 if(KBS_WAYLAND_TESTS)
     add_test(NAME wayland_smoke
-        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/wayland-smoke.sh $<TARGET_FILE:test_chooser>)
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/wayland-smoke.sh $<TARGET_FILE:test_chooser>
+            waylandLayerShellPopup waylandFocusLoss waylandOwnPopupKeepsTheChooser)
     set_tests_properties(wayland_smoke PROPERTIES SKIP_RETURN_CODE 77)
 endif()

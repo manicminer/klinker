@@ -246,7 +246,12 @@ QString formatArgumentLines(const QStringList &arguments)
 
 SelfIdentity SelfIdentity::current()
 {
-    SelfIdentity self{u"kde-browser-switcher.desktop"_s, u"kde-browser-switcher"_s, {}};
+    // Before it was renamed to Klinker, this application was Browser Switcher
+    // (kde-browser-switcher); an installed copy of it would hand links back.
+    SelfIdentity self{{u"io.github.manicminer.Klinker.desktop"_s, u"klinker.desktop"_s, u"io.github.manicminer.KdeBrowserSwitcher.desktop"_s,
+                       u"kde-browser-switcher.desktop"_s},
+                      {u"klinker"_s, u"kde-browser-switcher"_s},
+                      {}};
     if (QCoreApplication::instance()) {
         self.executablePaths.append(QCoreApplication::applicationFilePath());
     }
@@ -274,7 +279,7 @@ bool isSelfCommand(const CommandTemplate &command, const SelfIdentity &self)
     if (program.isEmpty()) {
         return true;
     }
-    if (!self.executableName.isEmpty() && QFileInfo(program).fileName() == self.executableName) {
+    if (self.executableNames.contains(QFileInfo(program).fileName())) {
         return true;
     }
     const QString resolved = resolveExecutable(program);
@@ -306,7 +311,7 @@ CommandValidation validateCommand(const CommandTemplate &command, const SelfIden
     }
 
     if (isSelfCommand(command, self)) {
-        result.errors.append(u"This command would open the browser switcher itself."_s);
+        result.errors.append(u"This command would open Klinker itself."_s);
     }
     if (resolveExecutable(unwrapped->program).isEmpty()) {
         result.warnings.append(unwrapped->program.contains(u'/') ? u"“%1” does not exist or is not executable."_s.arg(unwrapped->program)

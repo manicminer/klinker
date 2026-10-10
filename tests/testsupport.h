@@ -35,4 +35,12 @@ void writeBrowserDesktopFile(const QString &dataDir, const QString &desktopId, c
 // Mean lightness (0-255) of the image, ignoring fully transparent pixels.
 int meanLightness(const QImage &image);
 
+// Reports, as the platform plugin would, that another application now has the
+// keyboard focus: no window of this process is focused. Only for offscreen
+// tests; nothing outside the process is involved.
+void focusOtherApplication();
+
+// Reports that the window has the keyboard focus again.
+void focusWindow(QWidget *window);
+
 } // namespace kbs::test

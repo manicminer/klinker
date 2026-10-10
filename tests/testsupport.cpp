@@ -13,6 +13,9 @@
 #include <QStyleFactory>
 #include <QTemporaryDir>
 #include <QWidget>
+#include <QWindow>
+
+#include <qpa/qwindowsysteminterface.h>
 
 using namespace Qt::StringLiterals;
 
@@ -150,6 +153,17 @@ int meanLightness(const QImage &image)
         }
     }
     return count ? int(sum / count) : -1;
+}
+
+void focusOtherApplication()
+{
+    QWindowSystemInterface::handleFocusWindowChanged<QWindowSystemInterface::SynchronousDelivery>(nullptr, Qt::ActiveWindowFocusReason);
+}
+
+void focusWindow(QWidget *window)
+{
+    QWindowSystemInterface::handleFocusWindowChanged<QWindowSystemInterface::SynchronousDelivery>(window->windowHandle(),
+                                                                                              Qt::ActiveWindowFocusReason);
 }
 
 } // namespace kbs::test

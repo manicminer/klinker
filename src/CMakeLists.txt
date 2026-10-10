@@ -52,8 +52,8 @@ add_library(kbs_app STATIC
 target_link_libraries(kbs_app PUBLIC kbs_ui kbs_network Qt6::Widgets)
 target_compile_options(kbs_app PRIVATE -Wall -Wextra -Wpedantic)
 
-add_executable(kde-browser-switcher main.cpp)
-target_link_libraries(kde-browser-switcher PRIVATE kbs_app KF6::IconThemes)
-target_compile_options(kde-browser-switcher PRIVATE -Wall -Wextra -Wpedantic)
+add_executable(klinker main.cpp)
+target_link_libraries(klinker PRIVATE kbs_app KF6::IconThemes)
+target_compile_options(klinker PRIVATE -Wall -Wextra -Wpedantic)
 
-install(TARGETS kde-browser-switcher RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS klinker RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

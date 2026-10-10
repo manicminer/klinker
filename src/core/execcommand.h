@@ -56,8 +56,8 @@ QString formatArgumentLines(const QStringList &arguments);
 
 // How this application can be recognised so it is never used as a browser.
 struct SelfIdentity {
-    QString desktopId;
-    QString executableName;
+    QStringList desktopIds;
+    QStringList executableNames; // file names, wherever they are installed
     QStringList executablePaths;
 
     static SelfIdentity current();

@@ -5,12 +5,17 @@
 #include "app/launcher.h"
 #include "app/linkpipeline.h"
 #include "ui/chooserwindow.h"
+#include "ui/placement.h"
 #include "ui/settingsdialog.h"
+#include "ui/theme.h"
 
 #include <KMessageWidget>
 
 #include <QAction>
 #include <QCheckBox>
+#include <QComboBox>
+#include <QScreen>
+#include <QSpinBox>
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QFile>
@@ -19,7 +24,9 @@
 #include <QListView>
 #include <QProcess>
 #include <QPushButton>
+#include <QScopeGuard>
 #include <QSignalSpy>
+#include <QStandardPaths>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTemporaryDir>
@@ -228,6 +235,58 @@ QCheckBox *settingsCheck(Application &app, const QString &name)
     return app.settingsDialog() ? app.settingsDialog()->findChild<QCheckBox *>(name) : nullptr;
 }
 
+// The default configuration files in the test's private $XDG_CONFIG_HOME,
+// removed again afterwards.
+struct DefaultLocations {
+    QString current = kbs::ConfigStore::defaultPath();
+    QString legacy = kbs::ConfigStore::legacyDefaultPath();
+
+    DefaultLocations()
+    {
+        QVERIFY(current.startsWith(QDir::tempPath()));
+        QVERIFY(!QFile::exists(current) && !QFile::exists(legacy));
+    }
+
+    ~DefaultLocations()
+    {
+        QDir(QFileInfo(current).absolutePath()).removeRecursively();
+        QDir(QFileInfo(legacy).absolutePath()).removeRecursively();
+    }
+
+    static void write(const QString &path, const QByteArray &bytes)
+    {
+        QDir().mkpath(QFileInfo(path).absolutePath());
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        file.write(bytes);
+    }
+
+    static QByteArray read(const QString &path)
+    {
+        QFile file(path);
+        return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
+    }
+};
+
+// Links to /slow are redirected to /target, which a rule opens with "a"; the
+// chooser closes when it loses the focus.
+Config routedAfterRedirect(const Sandbox &box)
+{
+    Config config;
+    config.browsers = {box.capture(u"a"_s, u"Alpha"_s)};
+    config.rules = {{QString(), true, RuleType::Glob, u"http://127.0.0.1:*/target"_s, u"a"_s}};
+    config.privacy.unwrapRedirects = true;
+    config.chooser.closeOnFocusLoss = true;
+    return config;
+}
+
+void stallRedirect(RedirectServer &server)
+{
+    server.routes.insert("/slow", {302, "/target"});
+    server.routes.insert("/target", {200, {}});
+    server.stalled.insert("/slow");
+}
+
 Config configOnDisk(const QString &path)
 {
     QFile file(path);
@@ -334,11 +393,14 @@ private Q_SLOTS:
 
     void binaryHelpVersionAndErrors()
     {
+        QCOMPARE(QFileInfo(AppBinary).fileName(), u"klinker"_s);
         QProcess help;
         help.start(AppBinary, {u"--help"_s});
         QVERIFY(help.waitForFinished(10000));
         QCOMPARE(help.exitCode(), 0);
         const QString helpText = QString::fromUtf8(help.readAllStandardOutput());
+        // Qt names the program as it was invoked: "klinker" when found in PATH.
+        QVERIFY2(helpText.startsWith(u"Usage: %1 "_s.arg(AppBinary)), qPrintable(helpText));
         QVERIFY(helpText.contains(u"--settings"_s));
         QVERIFY(helpText.contains(u"--choose"_s));
         QVERIFY(helpText.contains(u"--config"_s));
@@ -347,7 +409,7 @@ private Q_SLOTS:
         version.start(AppBinary, {u"--version"_s});
         QVERIFY(version.waitForFinished(10000));
         QCOMPARE(version.exitCode(), 0);
-        QVERIFY(QString::fromUtf8(version.readAllStandardOutput()).contains(QStringLiteral(KBS_VERSION)));
+        QCOMPARE(QString::fromUtf8(version.readAllStandardOutput()), u"klinker %1\n"_s.arg(QStringLiteral(KBS_VERSION)));
 
         QProcess bad;
         QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
@@ -356,7 +418,25 @@ private Q_SLOTS:
         bad.start(AppBinary, {u"javascript:alert(1)"_s});
         QVERIFY(bad.waitForFinished(10000));
         QCOMPARE(bad.exitCode(), 2);
-        QVERIFY(QString::fromUtf8(bad.readAllStandardError()).contains(u"javascript:alert(1)"_s));
+        const QString error = QString::fromUtf8(bad.readAllStandardError());
+        QVERIFY(error.contains(u"javascript:alert(1)"_s));
+        QVERIFY2(error.startsWith(u"klinker: "_s) && error.contains(u"“klinker --help”"_s), qPrintable(error));
+    }
+
+    void desktopFileUsesTheKlinkerIdentity()
+    {
+        QFile file(QStringLiteral(KBS_SOURCE_DIR "/data/io.github.manicminer.Klinker.desktop"));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const QString text = QString::fromUtf8(file.readAll());
+        const QStringList lines = text.split(u'\n');
+        for (const QString &line : {u"Name=Klinker"_s, u"Exec=klinker %U"_s, u"TryExec=klinker"_s, u"Icon=io.github.manicminer.Klinker"_s,
+                                    u"Name=Configure Klinker"_s, u"Exec=klinker --settings"_s}) {
+            QVERIFY2(lines.contains(line), qPrintable(line));
+        }
+        QVERIFY(!text.contains(u"Browser Switcher"_s));
+        QVERIFY(QFile::exists(QStringLiteral(KBS_SOURCE_DIR "/data/icons/io.github.manicminer.Klinker.svg")));
+        QCOMPARE(kbs::AppDisplayName.toString(), u"Klinker"_s);
+        QCOMPARE(kbs::AppId.toString(), u"io.github.manicminer.Klinker"_s);
     }
 
     // Launching
@@ -386,11 +466,13 @@ private Q_SLOTS:
         QVERIFY(!result.ok);
         QVERIFY(result.error.contains(u"Missing"_s));
 
-        kbs::Browser self;
-        self.name = u"Loop"_s;
-        self.command = {u"kde-browser-switcher"_s, {u"{url}"_s}};
-        result = kbs::launchBrowser(self, u"https://example.com/"_s, kbs::appSelfIdentity());
-        QVERIFY(!result.ok);
+        for (const QString &name : {u"klinker"_s, u"kde-browser-switcher"_s, AppBinary}) {
+            kbs::Browser self;
+            self.name = u"Loop"_s;
+            self.command = {name, {u"{url}"_s}};
+            result = kbs::launchBrowser(self, u"https://example.com/"_s, kbs::appSelfIdentity());
+            QVERIFY2(!result.ok, qPrintable(name));
+        }
 
         kbs::Browser ok;
         ok.name = u"Fixture"_s;
@@ -401,8 +483,72 @@ private Q_SLOTS:
 
     void appIdentityUsesTheInstalledDesktopId()
     {
-        QCOMPARE(kbs::appSelfIdentity().desktopId, u"io.github.manicminer.KdeBrowserSwitcher.desktop"_s);
-        QCOMPARE(kbs::appSelfIdentity().executableName, u"kde-browser-switcher"_s);
+        const kbs::SelfIdentity self = kbs::appSelfIdentity();
+        QCOMPARE(self.desktopIds.first(), u"io.github.manicminer.Klinker.desktop"_s);
+        // Earlier installations under the old name are never offered or started either.
+        QVERIFY(self.desktopIds.contains(u"io.github.manicminer.KdeBrowserSwitcher.desktop"_s));
+        QVERIFY(self.desktopIds.contains(u"kde-browser-switcher.desktop"_s));
+        QVERIFY(self.desktopIds.contains(u"klinker.desktop"_s));
+        QCOMPARE(self.executableNames, (QStringList{u"klinker"_s, u"kde-browser-switcher"_s}));
+        QVERIFY(self.executablePaths.contains(QCoreApplication::applicationFilePath()));
+    }
+
+    // Configuration of Browser Switcher, the name before Klinker
+
+    void defaultLocationReadsTheLegacyConfiguration()
+    {
+        Sandbox box;
+        DefaultLocations files;
+        Config old;
+        old.browsers = {box.capture(u"a"_s, u"Alpha"_s), box.capture(u"b"_s, u"Beta"_s)};
+        old.rules = {{QString(), true, RuleType::Domain, u"old.example"_s, u"b"_s}};
+        const QByteArray legacy = kbs::configToJson(old);
+        DefaultLocations::write(files.legacy, legacy);
+
+        Application::Options options = box.options();
+        options.configPath.clear();
+        Application app(options);
+        QCOMPARE(app.config(), old);
+
+        // Opening links reads the old file and writes nothing.
+        QSignalSpy launched(&app, &Application::launched);
+        app.openUrls({u"https://old.example/"_s});
+        QTRY_COMPARE(launched.size(), 1);
+        QCOMPARE(launched.first().at(0).toString(), u"b"_s);
+        QVERIFY(!QFile::exists(files.current));
+        QVERIFY(!QFileInfo::exists(QFileInfo(files.current).absolutePath()));
+
+        // Saving the settings imports them into the new location only.
+        app.openSettings();
+        QTRY_VERIFY(app.settingsDialog());
+        settingsCheck(app, u"stripTrackingCheck"_s)->setChecked(true);
+        app.settingsDialog()->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+        QTRY_VERIFY(!app.settingsDialog());
+        Config expected = old;
+        expected.privacy.stripTrackingParameters = true;
+        QCOMPARE(configOnDisk(files.current), expected);
+        QCOMPARE(DefaultLocations::read(files.legacy), legacy);
+        QCOMPARE(app.config(), expected);
+    }
+
+    void explicitConfigNeverReadsTheLegacyConfiguration()
+    {
+        Sandbox box;
+        DefaultLocations files;
+        Config old;
+        old.browsers = {box.capture(u"a"_s, u"Alpha"_s)};
+        const QByteArray legacy = kbs::configToJson(old);
+        DefaultLocations::write(files.legacy, legacy);
+
+        Application app(box.options());
+        QCOMPARE(app.config(), Config());
+        app.openSettings();
+        QTRY_VERIFY(app.settingsDialog());
+        QVERIFY(app.settingsDialog()->apply());
+        QVERIFY(QFile::exists(box.configPath));
+        QVERIFY(!QFile::exists(files.current));
+        QCOMPARE(DefaultLocations::read(files.legacy), legacy);
+        app.settingsDialog()->reject();
     }
 
     // Preprocessing
@@ -930,6 +1076,337 @@ private Q_SLOTS:
         settingsCheck(app, u"unwrapRedirectsCheck"_s)->setChecked(false);
         QVERIFY(app.settingsDialog()->apply());
         QCOMPARE(configOnDisk(box.configPath).privacy, kbs::PrivacySettings());
+    }
+
+    // Chooser preferences
+
+    void chooserUsesTheConfiguredPreferences()
+    {
+        Sandbox box;
+        Config config;
+        config.browsers = {box.capture(u"a"_s, u"Alpha"_s), box.capture(u"b"_s, u"Beta"_s)};
+        config.chooser = {kbs::ChooserStyle::Horizontal, 64, false, false};
+        box.writeConfig(config);
+        Application app(box.options());
+        app.openUrls({u"https://kde.org/"_s});
+        QTRY_VERIFY(app.chooser() && app.chooser()->isVisible());
+        QCOMPARE(app.chooser()->preferences(), config.chooser);
+        QCOMPARE(chooserList(app)->flow(), QListView::LeftToRight);
+        // Placed at its preferred size for the screen (the offscreen screen has
+        // no name, so placement does not move it; see test_placement).
+        const QSize maximum = kbs::maximumSize(app.chooser()->screen()->availableGeometry(), 8);
+        QCOMPARE(app.chooser()->size(), app.chooser()->preferredSize(maximum));
+        QVERIFY(app.chooser()->width() > app.chooser()->preferredSize(maximum).height());
+        QSignalSpy launched(&app, &Application::launched);
+        QTest::keyClick(chooserList(app), Qt::Key_2);
+        QTRY_COMPARE(launched.size(), 1);
+        QCOMPARE(launched.first().at(0).toString(), u"b"_s);
+    }
+
+    void savedAppearanceAppliesWhenTheChooserReturns()
+    {
+        Sandbox box;
+        Config config;
+        config.browsers = {box.capture(u"a"_s, u"Alpha"_s), box.capture(u"b"_s, u"Beta"_s), box.capture(u"c"_s, u"Gamma"_s)};
+        box.writeConfig(config);
+        Application app(box.options());
+        app.openUrls({u"https://kde.org/"_s});
+        QTRY_VERIFY(app.chooser() && app.chooser()->isVisible());
+        QPointer<ChooserWindow> chooser = app.chooser();
+        QScreen *screen = chooser->screen();
+        QCOMPARE(chooser->width(), ChooserWindow::CardWidth);
+
+        chooser->findChild<QPushButton *>(u"settingsButton"_s)->click();
+        QTRY_VERIFY(app.settingsDialog() && app.settingsDialog()->isVisible());
+        auto *style = app.settingsDialog()->findChild<QComboBox *>(u"chooserStyleCombo"_s);
+        style->setCurrentIndex(style->findData(u"horizontal"_s));
+        app.settingsDialog()->findChild<QSpinBox *>(u"iconSizeSpin"_s)->setValue(96);
+        app.settingsDialog()->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+
+        QTRY_VERIFY(app.chooser() && app.chooser()->isVisible() && !app.settingsDialog());
+        QCOMPARE(app.chooser(), chooser.data()); // the same link, the same window
+        QCOMPARE(chooser->preferences(), (kbs::ChooserSettings{kbs::ChooserStyle::Horizontal, 96, true, false}));
+        QCOMPARE(chooserList(app)->flow(), QListView::LeftToRight);
+        // Refitted on the screen it was on.
+        QCOMPARE(chooser->screen(), screen);
+        QCOMPARE(chooser->size(), chooser->preferredSize(kbs::maximumSize(screen->availableGeometry(), 8)));
+        QVERIFY(screen->availableGeometry().adjusted(8, 8, -8, -8).contains(chooser->geometry()));
+        QSignalSpy launched(&app, &Application::launched);
+        QTest::keyClick(chooserList(app), Qt::Key_3);
+        QTRY_COMPARE(launched.size(), 1);
+        QCOMPARE(launched.first().at(0).toString(), u"c"_s);
+    }
+
+    // Closing on focus loss
+
+    void focusLossKeepsTheChooserByDefault()
+    {
+        Sandbox box;
+        Config config;
+        config.browsers = {box.capture(u"a"_s, u"Alpha"_s)};
+        box.writeConfig(config);
+        Application app(box.options());
+        app.openUrls({u"https://kde.org/"_s});
+        QTRY_VERIFY(app.chooser() && app.chooser()->isActiveWindow());
+        kbs::test::focusOtherApplication();
+        QTest::qWait(ChooserWindow::FocusLossDelayMs + 200);
+        QVERIFY(app.chooser() && app.chooser()->isVisible());
+        QSignalSpy launched(&app, &Application::launched);
+        QTest::keyClick(chooserList(app), Qt::Key_1);
+        QTRY_COMPARE(launched.size(), 1);
+    }
+
+    // As with Esc, the next link waiting is shown.
+    void focusLossCancelsAndMovesToTheNextLink()
+    {
+        Sandbox box;
+        Config config;
+        config.browsers = {box.capture(u"a"_s, u"Alpha"_s)};
+        config.chooser.closeOnFocusLoss = true;
+        box.writeConfig(config);
+        Application app(box.options());
+        QSignalSpy finished(&app, &Application::finished);
+        QSignalSpy launched(&app, &Application::launched);
+        app.openUrls({u"https://one.example/"_s, u"https://two.example/"_s});
+        QTRY_VERIFY(app.chooser() && app.chooser()->isActiveWindow());
+        QCOMPARE(app.chooser()->finalUrl(), u"https://one.example/"_s);
+        kbs::test::focusOtherApplication();
+        QTRY_VERIFY(app.chooser() && app.chooser()->finalUrl() == u"https://two.example/"_s);
+        // The next chooser has the focus of its own and stays.
+        QTRY_VERIFY(app.chooser()->isActiveWindow());
+        QTest::qWait(ChooserWindow::FocusLossDelayMs + 200);
+        QCOMPARE(launched.size(), 0);
+        QCOMPARE(finished.size(), 0);
+        QTest::keyClick(chooserList(app), Qt::Key_1);
+        QTRY_COMPARE(finished.size(), 1);
+        QCOMPARE(launched.size(), 1);
+        QCOMPARE(launched.first().at(1).toString(), u"https://two.example/"_s);
+        QTRY_COMPARE(box.captures().size(), 1);
+    }
+
+    void focusLossWhileResolvingNeverLaunches()
+    {
+        RedirectServer server;
+        server.routes.insert("/slow", {302, "/target"});
+        server.routes.insert("/target", {200, {}});
+        server.stalled.insert("/slow");
+        Sandbox box;
+        Config config;
+        config.browsers = {box.capture(u"a"_s, u"Alpha"_s)};
+        config.rules = {{QString(), true, RuleType::Glob, u"*"_s, u"a"_s}};
+        config.privacy.unwrapRedirects = true;
+        config.chooser.closeOnFocusLoss = true;
+        box.writeConfig(config);
+        Application app(box.options());
+        QSignalSpy finished(&app, &Application::finished);
+        QSignalSpy launched(&app, &Application::launched);
+        app.openUrls({server.url("/slow")});
+        QTRY_VERIFY(server.requested("/slow"));
+        QTRY_VERIFY(app.chooser() && app.chooser()->isBusy() && app.chooser()->isActiveWindow());
+        QPointer<ChooserWindow> chooser = app.chooser();
+        QSignalSpy cancelled(chooser.data(), &ChooserWindow::cancelled);
+
+        kbs::test::focusOtherApplication();
+        QTRY_COMPARE(finished.size(), 1);
+        QCOMPARE(cancelled.size(), 1);
+        QTRY_VERIFY(!chooser);
+        server.release("/slow");
+        QTest::qWait(300);
+        QCOMPARE(launched.size(), 0);
+        QCOMPARE(finished.size(), 1);
+        QVERIFY(box.captures().isEmpty());
+    }
+
+    // Deciding whether the focus has really gone takes FocusLossDelayMs. A link
+    // that becomes ready meanwhile waits for that decision: here the focus
+    // stays away, so it is cancelled and never routed.
+    void linkReadyBeforeTheFocusLossDecisionNeverLaunches()
+    {
+        RedirectServer server;
+        stallRedirect(server);
+        Sandbox box;
+        box.writeConfig(routedAfterRedirect(box));
+        Application app(box.options());
+        QSignalSpy finished(&app, &Application::finished);
+        QSignalSpy launched(&app, &Application::launched);
+        app.openUrls({server.url("/slow")});
+        QTRY_VERIFY(server.requested("/slow"));
+        QTRY_VERIFY(app.chooser() && app.chooser()->isBusy() && app.chooser()->isActiveWindow());
+        QPointer<ChooserWindow> chooser = app.chooser();
+        QSignalSpy cancelled(chooser.data(), &ChooserWindow::cancelled);
+
+        kbs::test::focusOtherApplication();
+        QVERIFY(chooser->isFocusLossPending());
+        server.release("/slow");
+        // Ready well within the delay: held back, the chooser still busy.
+        QTRY_VERIFY_WITH_TIMEOUT(app.isRoutingDeferred(), ChooserWindow::FocusLossDelayMs);
+        QVERIFY(chooser->isFocusLossPending() && chooser->isBusy());
+        QCOMPARE(launched.size(), 0);
+        QTRY_COMPARE(finished.size(), 1);
+        QCOMPARE(cancelled.size(), 1);
+        QTRY_VERIFY(!chooser);
+        QTest::qWait(ChooserWindow::FocusLossDelayMs + 100);
+        QCOMPARE(launched.size(), 0);
+        QVERIFY(box.captures().isEmpty());
+    }
+
+    // The focus comes back before the decision: the waiting link is routed, once.
+    void linkReadyBeforeTheFocusComesBackIsRoutedOnce()
+    {
+        RedirectServer server;
+        stallRedirect(server);
+        Sandbox box;
+        box.writeConfig(routedAfterRedirect(box));
+        Application app(box.options());
+        QSignalSpy finished(&app, &Application::finished);
+        QSignalSpy launched(&app, &Application::launched);
+        app.openUrls({server.url("/slow")});
+        QTRY_VERIFY(server.requested("/slow"));
+        QTRY_VERIFY(app.chooser() && app.chooser()->isBusy() && app.chooser()->isActiveWindow());
+        QPointer<ChooserWindow> chooser = app.chooser();
+        QSignalSpy cancelled(chooser.data(), &ChooserWindow::cancelled);
+        QSignalSpy resolved(chooser.data(), &ChooserWindow::focusLossResolved);
+
+        kbs::test::focusOtherApplication();
+        QVERIFY(chooser->isFocusLossPending());
+        server.release("/slow");
+        // Ready well within the delay: held back, the chooser still busy.
+        QTRY_VERIFY_WITH_TIMEOUT(app.isRoutingDeferred(), ChooserWindow::FocusLossDelayMs);
+        QVERIFY(chooser->isFocusLossPending() && chooser->isBusy());
+        QCOMPARE(launched.size(), 0);
+        QVERIFY(chooser && chooser->isVisible());
+
+        kbs::test::focusWindow(chooser);
+        QCOMPARE(resolved.size(), 1);
+        QTRY_COMPARE(finished.size(), 1);
+        QCOMPARE(launched.size(), 1);
+        QCOMPARE(launched.first().at(1).toString(), server.url("/target"));
+        QCOMPARE(cancelled.size(), 0);
+        QTest::qWait(ChooserWindow::FocusLossDelayMs + 100);
+        QCOMPARE(launched.size(), 1);
+        QCOMPARE(finished.size(), 1);
+        QTRY_COMPARE(box.captures().size(), 1);
+    }
+
+    // The settings opened before the decision hide the chooser, which is not
+    // losing the focus; the waiting link is routed once they close.
+    void linkReadyBeforeTheSettingsOpenIsRoutedOnceTheyClose()
+    {
+        RedirectServer server;
+        stallRedirect(server);
+        Sandbox box;
+        box.writeConfig(routedAfterRedirect(box));
+        Application app(box.options());
+        QSignalSpy finished(&app, &Application::finished);
+        QSignalSpy launched(&app, &Application::launched);
+        app.openUrls({server.url("/slow")});
+        QTRY_VERIFY(server.requested("/slow"));
+        QTRY_VERIFY(app.chooser() && app.chooser()->isBusy() && app.chooser()->isActiveWindow());
+        QPointer<ChooserWindow> chooser = app.chooser();
+        QSignalSpy cancelled(chooser.data(), &ChooserWindow::cancelled);
+        QSignalSpy resolved(chooser.data(), &ChooserWindow::focusLossResolved);
+
+        kbs::test::focusOtherApplication();
+        QVERIFY(chooser->isFocusLossPending());
+        server.release("/slow");
+        // Ready well within the delay: held back, the chooser still busy.
+        QTRY_VERIFY_WITH_TIMEOUT(app.isRoutingDeferred(), ChooserWindow::FocusLossDelayMs);
+        QVERIFY(chooser->isFocusLossPending() && chooser->isBusy());
+        QCOMPARE(launched.size(), 0);
+
+        chooser->findChild<QPushButton *>(u"settingsButton"_s)->click();
+        QTRY_VERIFY(app.settingsDialog() && !chooser->isVisible());
+        // Resolved by hiding, but still waiting, now for the settings.
+        QCOMPARE(resolved.size(), 1);
+        QVERIFY(!chooser->isFocusLossPending() && app.isRoutingDeferred());
+        QTest::qWait(ChooserWindow::FocusLossDelayMs + 100);
+        QCOMPARE(launched.size(), 0);
+        QCOMPARE(cancelled.size(), 0);
+        QCOMPARE(finished.size(), 0);
+
+        app.settingsDialog()->reject();
+        QTRY_COMPARE(finished.size(), 1);
+        QCOMPARE(launched.size(), 1);
+        QCOMPARE(launched.first().at(1).toString(), server.url("/target"));
+        QTest::qWait(ChooserWindow::FocusLossDelayMs + 100);
+        QCOMPARE(launched.size(), 1);
+        QTRY_COMPARE(box.captures().size(), 1);
+    }
+
+    // The cancelled link is dropped and the next one is shown; nothing of the
+    // first link or its chooser can act on the next.
+    void linkReadyBeforeTheFocusLossDecisionMovesToTheNextLink()
+    {
+        RedirectServer server;
+        stallRedirect(server);
+        Sandbox box;
+        box.writeConfig(routedAfterRedirect(box));
+        Application app(box.options());
+        QSignalSpy finished(&app, &Application::finished);
+        QSignalSpy launched(&app, &Application::launched);
+        app.openUrls({server.url("/slow"), u"https://ask.example/"_s});
+        QTRY_VERIFY(server.requested("/slow"));
+        QTRY_VERIFY(app.chooser() && app.chooser()->isBusy() && app.chooser()->isActiveWindow());
+        QPointer<ChooserWindow> first = app.chooser();
+
+        kbs::test::focusOtherApplication();
+        QVERIFY(first->isFocusLossPending());
+        server.release("/slow");
+        // Ready well within the delay: held back, the chooser still busy.
+        QTRY_VERIFY_WITH_TIMEOUT(app.isRoutingDeferred(), ChooserWindow::FocusLossDelayMs);
+        QVERIFY(first->isFocusLossPending() && first->isBusy());
+        QCOMPARE(launched.size(), 0);
+
+        QTRY_VERIFY(!first && app.chooser() && app.chooser()->finalUrl() == u"https://ask.example/"_s);
+        QTRY_VERIFY(app.chooser()->isActiveWindow());
+        QTest::qWait(ChooserWindow::FocusLossDelayMs + 100);
+        QVERIFY(app.chooser() && app.chooser()->isVisible());
+        QCOMPARE(launched.size(), 0);
+        QCOMPARE(finished.size(), 0);
+
+        QTest::keyClick(chooserList(app), Qt::Key_1);
+        QTRY_COMPARE(finished.size(), 1);
+        QCOMPARE(launched.size(), 1);
+        QCOMPARE(launched.first().at(1).toString(), u"https://ask.example/"_s);
+        QTRY_COMPARE(box.captures().size(), 1);
+        QCOMPARE(box.captures().first().last(), u"https://ask.example/"_s);
+    }
+
+    // The chooser steps aside for the settings; switching to another
+    // application meanwhile is not leaving the chooser.
+    void settingsDoNotCountAsFocusLoss()
+    {
+        Sandbox box;
+        Config config;
+        config.browsers = {box.capture(u"a"_s, u"Alpha"_s)};
+        box.writeConfig(config);
+        Application app(box.options());
+        QSignalSpy finished(&app, &Application::finished);
+        QSignalSpy launched(&app, &Application::launched);
+        app.openUrls({u"https://kde.org/"_s});
+        QTRY_VERIFY(app.chooser() && app.chooser()->isActiveWindow());
+        QPointer<ChooserWindow> chooser = app.chooser();
+
+        // Turned on in the settings opened from the chooser.
+        chooser->findChild<QPushButton *>(u"settingsButton"_s)->click();
+        QTRY_VERIFY(app.settingsDialog() && app.settingsDialog()->isActiveWindow());
+        settingsCheck(app, u"closeOnFocusLossCheck"_s)->setChecked(true);
+        QVERIFY(app.settingsDialog()->apply());
+        kbs::test::focusOtherApplication();
+        QTest::qWait(ChooserWindow::FocusLossDelayMs + 200);
+        kbs::test::focusWindow(app.settingsDialog());
+        QTRY_VERIFY(app.settingsDialog()->isActiveWindow());
+        app.settingsDialog()->reject();
+
+        QTRY_VERIFY(chooser && chooser->isVisible() && chooser->isActiveWindow());
+        QCOMPARE(finished.size(), 0);
+        QVERIFY(chooser->preferences().closeOnFocusLoss);
+        QTest::qWait(ChooserWindow::FocusLossDelayMs + 200);
+        QVERIFY(chooser && chooser->isVisible());
+
+        kbs::test::focusOtherApplication();
+        QTRY_COMPARE(finished.size(), 1);
+        QCOMPARE(launched.size(), 0);
     }
 
     // Privacy settings changed while a link is pending

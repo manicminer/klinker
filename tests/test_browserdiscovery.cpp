@@ -39,7 +39,7 @@ const DetectedBrowser *findBrowser(const QList<DetectedBrowser> &browsers, const
 
 SelfIdentity testSelf()
 {
-    return {u"kde-browser-switcher.desktop"_s, u"kde-browser-switcher"_s, {}};
+    return SelfIdentity::current();
 }
 } // namespace
 
@@ -103,6 +103,13 @@ private Q_SLOTS:
         QVERIFY(writeFile(apps(m_usr, u"kde-browser-switcher.desktop"_s), entry("Switcher", "/opt/other-name %u")));
         QVERIFY(writeFile(apps(m_usr, u"switcher-copy.desktop"_s), entry("Switcher copy", "kde-browser-switcher %u")));
         QVERIFY(writeFile(apps(m_usr, u"switcher-env.desktop"_s), entry("Switcher env", "env A=1 /usr/bin/kde-browser-switcher %u")));
+        QVERIFY(writeFile(apps(m_usr, u"klinker.desktop"_s), entry("Klinker", "/opt/other-name %u")));
+        QVERIFY(writeFile(apps(m_usr, u"io.github.manicminer.Klinker.desktop"_s), entry("Klinker", "/opt/other-name %u")));
+        QVERIFY(writeFile(apps(m_local, u"io.github.manicminer.KdeBrowserSwitcher.desktop"_s), entry("Browser Switcher", "/opt/other-name %u")));
+        QVERIFY(writeFile(apps(m_usr, u"klinker-copy.desktop"_s), entry("Klinker copy", "klinker %u")));
+        QVERIFY(writeFile(apps(m_usr, u"klinker-env.desktop"_s), entry("Klinker env", "env A=1 /home/user/.local/bin/klinker %u")));
+        QVERIFY(writeFile(apps(m_local, u"switcher-local.desktop"_s), entry("Old switcher", "/home/user/.local/bin/kde-browser-switcher %U")));
+        QVERIFY(writeFile(apps(m_usr, u"klinker-helper.desktop"_s), entry("Not Klinker", "klinker-helper %u")));
         // A wrapper that hides the program it runs could be ourselves.
         QVERIFY(writeFile(apps(m_usr, u"switcher-split.desktop"_s), entry("Switcher split", "env -S kde-browser-switcher %u")));
         // Subdirectories form the desktop ID.
@@ -161,6 +168,12 @@ private Q_SLOTS:
         QTest::newRow("self by desktop ID") << u"kde-browser-switcher.desktop"_s;
         QTest::newRow("self by executable") << u"switcher-copy.desktop"_s;
         QTest::newRow("self behind env") << u"switcher-env.desktop"_s;
+        QTest::newRow("Klinker by desktop ID") << u"klinker.desktop"_s;
+        QTest::newRow("Klinker by application ID") << u"io.github.manicminer.Klinker.desktop"_s;
+        QTest::newRow("Browser Switcher by application ID") << u"io.github.manicminer.KdeBrowserSwitcher.desktop"_s;
+        QTest::newRow("Klinker by executable") << u"klinker-copy.desktop"_s;
+        QTest::newRow("Klinker behind env") << u"klinker-env.desktop"_s;
+        QTest::newRow("Browser Switcher by executable path") << u"switcher-local.desktop"_s;
         QTest::newRow("uninspectable env wrapper") << u"switcher-split.desktop"_s;
     }
 
@@ -173,6 +186,7 @@ private Q_SLOTS:
     void includedEntries()
     {
         QVERIFY(findBrowser(m_result.browsers, u"kde-only.desktop"_s));
+        QVERIFY(findBrowser(m_result.browsers, u"klinker-helper.desktop"_s));
         QVERIFY(findBrowser(m_result.browsers, u"tryexec-present.desktop"_s));
     }
 
@@ -230,7 +244,7 @@ private Q_SLOTS:
             return QString::localeAwareCompare(a.toCaseFolded(), b.toCaseFolded()) < 0;
         });
         QCOMPARE(names, sorted);
-        QCOMPARE(m_result.browsers.size(), 10);
+        QCOMPARE(m_result.browsers.size(), 11);
     }
 
     void defaultDataDirsFollowXdg()

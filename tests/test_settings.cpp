@@ -8,6 +8,7 @@
 #include <KMessageWidget>
 #include <KPageWidgetModel>
 
+#include <QAction>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
@@ -20,6 +21,7 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QSignalSpy>
+#include <QSpinBox>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTreeWidget>
@@ -85,7 +87,8 @@ struct SettingsFixture {
     QTemporaryDir dir;
     QString dataDir;
     QString configPath;
-    kbs::SelfIdentity self{u"io.github.manicminer.KdeBrowserSwitcher.desktop"_s, u"kde-browser-switcher"_s, {}};
+    QString legacyPath; // read when configPath does not exist, if set
+    kbs::SelfIdentity self{{u"io.github.manicminer.KdeBrowserSwitcher.desktop"_s}, {u"kde-browser-switcher"_s}, {}};
     std::unique_ptr<ConfigStore> store;
     std::unique_ptr<SettingsDialog> dialog;
 
@@ -113,7 +116,7 @@ struct SettingsFixture {
     void open()
     {
         dialog.reset();
-        store = std::make_unique<ConfigStore>(configPath);
+        store = std::make_unique<ConfigStore>(configPath, legacyPath);
         const ConfigStore::LoadResult loaded = store->load();
         SettingsDialog::Context context;
         context.store = store.get();
@@ -230,7 +233,15 @@ private Q_SLOTS:
         for (int i = 0; i < model->rowCount(); ++i) {
             names.append(model->index(i, 0).data(Qt::DisplayRole).toString());
         }
-        QCOMPARE(names, (QStringList{u"Browsers"_s, u"Routing Rules"_s, u"Privacy"_s, u"About"_s}));
+        QCOMPARE(names, (QStringList{u"Browsers"_s, u"Appearance"_s, u"Routing Rules"_s, u"Privacy"_s, u"About"_s}));
+        QCOMPARE(f.dialog->windowTitle(), u"Configure — Klinker"_s);
+        QStringList about;
+        for (const QLabel *label : f.dialog->findChildren<QLabel *>()) {
+            about.append(label->text());
+        }
+        QVERIFY2(about.contains(u"klinker [--settings] [--choose] [--config FILE] [URL…]"_s), qPrintable(about.join(u'\n')));
+        QVERIFY(about.contains(u"io.github.manicminer.Klinker.desktop"_s));
+        QVERIFY(!about.join(u'\n').contains(u"Browser Switcher"_s));
     }
 
     void browsersFollowTheConfiguredOrderAndShowProblems()
@@ -283,7 +294,7 @@ private Q_SLOTS:
         QFETCH(QString, name);
         QFETCH(QString, program);
         QFETCH(QString, arguments);
-        const kbs::SelfIdentity self{u"io.github.manicminer.KdeBrowserSwitcher.desktop"_s, u"kde-browser-switcher"_s, {}};
+        const kbs::SelfIdentity self{{u"io.github.manicminer.KdeBrowserSwitcher.desktop"_s}, {u"kde-browser-switcher"_s}, {}};
         kbs::BrowserEditDialog editor({}, self);
         editor.show();
         child<QLineEdit>(&editor, u"nameEdit"_s)->setText(name);
@@ -298,7 +309,7 @@ private Q_SLOTS:
 
     void editorWarnsAboutAMissingExecutableButAllowsIt()
     {
-        const kbs::SelfIdentity self{u"io.github.manicminer.KdeBrowserSwitcher.desktop"_s, u"kde-browser-switcher"_s, {}};
+        const kbs::SelfIdentity self{{u"io.github.manicminer.KdeBrowserSwitcher.desktop"_s}, {u"kde-browser-switcher"_s}, {}};
         kbs::BrowserEditDialog editor({}, self);
         editor.show();
         child<QLineEdit>(&editor, u"nameEdit"_s)->setText(u"Later"_s);
@@ -335,7 +346,7 @@ private Q_SLOTS:
     // fields must keep them exactly.
     void editorKeepsUntouchedArgumentsExactly()
     {
-        const kbs::SelfIdentity self{u"io.github.manicminer.KdeBrowserSwitcher.desktop"_s, u"kde-browser-switcher"_s, {}};
+        const kbs::SelfIdentity self{{u"io.github.manicminer.KdeBrowserSwitcher.desktop"_s}, {u"kde-browser-switcher"_s}, {}};
         const QStringList arguments{u"--profile"_s, u""_s, u"   "_s, u"{url}"_s};
         kbs::BrowserEditDialog editor({u"Alpha"_s, u"firefox"_s, {Fixture, arguments}}, self);
         editor.show();
@@ -675,6 +686,152 @@ private Q_SLOTS:
         QCOMPARE(f.savedConfig().privacy, (kbs::PrivacySettings{false, true}));
     }
 
+    void legacySettingsAreShownAndImportedOnApply()
+    {
+        SettingsFixture f;
+        f.legacyPath = f.dir.path() + u"/kde-browser-switcher/config.json"_s;
+        QDir().mkpath(QFileInfo(f.legacyPath).absolutePath());
+        QFile legacy(f.legacyPath);
+        QVERIFY(legacy.open(QIODevice::WriteOnly));
+        legacy.write(TwoRules);
+        legacy.close();
+        f.open();
+        QCOMPARE(tableIds(f.browsers()), (QStringList{u"gamma.desktop"_s, u"alpha.desktop"_s, u"beta.desktop"_s}));
+
+        f.dialog->showPage(u"about"_s);
+        auto *source = child<QLabel>(f.dialog.get(), u"legacySourceLabel"_s);
+        QVERIFY(source && source->isVisible());
+        QCOMPARE(source->text(), f.legacyPath);
+        QVERIFY(!QFile::exists(f.configPath));
+
+        QVERIFY(f.dialog->apply());
+        QCOMPARE(f.savedConfig().rules.size(), 2);
+        QVERIFY(legacy.open(QIODevice::ReadOnly));
+        QCOMPARE(legacy.readAll(), TwoRules);
+        // Saved: the old file is no longer what the settings come from.
+        QVERIFY(!source->isVisible());
+    }
+
+    // Appearance page
+
+    void appearanceDefaultsKeepTheVerticalList()
+    {
+        SettingsFixture f;
+        f.dialog->showPage(u"appearance"_s);
+        auto *style = child<QComboBox>(f.dialog.get(), u"chooserStyleCombo"_s);
+        auto *size = child<QSpinBox>(f.dialog.get(), u"iconSizeSpin"_s);
+        auto *names = child<QCheckBox>(f.dialog.get(), u"showNamesCheck"_s);
+        auto *focus = child<QCheckBox>(f.dialog.get(), u"closeOnFocusLossCheck"_s);
+        QVERIFY(style && size && names && focus);
+        QVERIFY(style->isVisible());
+        QCOMPARE(style->count(), 2);
+        QCOMPARE(style->currentData().toString(), u"vertical"_s);
+        QCOMPARE(style->itemData(1).toString(), u"horizontal"_s);
+        QCOMPARE(size->value(), 48);
+        QCOMPARE(size->minimum(), 24);
+        QCOMPARE(size->maximum(), 128);
+        QVERIFY(names->isChecked());
+        QVERIFY(!focus->isChecked());
+        // Only the horizontal chooser uses the icon size and names.
+        QVERIFY(!size->isEnabled());
+        QVERIFY(!names->isEnabled());
+        QVERIFY(focus->isEnabled());
+        QCOMPARE(f.dialog->draftConfig().chooser, kbs::ChooserSettings());
+        // Each control can be found by its label.
+        for (QWidget *control : std::initializer_list<QWidget *>{style, size}) {
+            const auto labels = f.dialog->findChildren<QLabel *>();
+            QVERIFY(std::ranges::any_of(labels, [control](QLabel *label) {
+                return label->buddy() == control && !label->text().isEmpty();
+            }));
+        }
+    }
+
+    void horizontalOptionsAreRememberedWhileVertical()
+    {
+        SettingsFixture f;
+        auto *style = child<QComboBox>(f.dialog.get(), u"chooserStyleCombo"_s);
+        auto *size = child<QSpinBox>(f.dialog.get(), u"iconSizeSpin"_s);
+        auto *names = child<QCheckBox>(f.dialog.get(), u"showNamesCheck"_s);
+        style->setCurrentIndex(style->findData(u"horizontal"_s));
+        QVERIFY(size->isEnabled());
+        QVERIFY(names->isEnabled());
+        size->setValue(96);
+        names->setChecked(false);
+        QCOMPARE(f.dialog->draftConfig().chooser, (kbs::ChooserSettings{kbs::ChooserStyle::Horizontal, 96, false, false}));
+
+        style->setCurrentIndex(style->findData(u"vertical"_s));
+        QVERIFY(!size->isEnabled());
+        QVERIFY(!names->isEnabled());
+        QCOMPARE(size->value(), 96);
+        QVERIFY(!names->isChecked());
+        QVERIFY(f.dialog->apply());
+        QCOMPARE(f.savedConfig().chooser, (kbs::ChooserSettings{kbs::ChooserStyle::Vertical, 96, false, false}));
+
+        // Out-of-range input is bounded by the control.
+        size->setValue(500);
+        QCOMPARE(size->value(), 128);
+        size->setValue(1);
+        QCOMPARE(size->value(), 24);
+    }
+
+    void appearanceIsLoadedAndSavedWithOk()
+    {
+        SettingsFixture f("{\"version\":1,\"chooser\":{\"style\":\"horizontal\",\"iconSize\":64,\"showBrowserNames\":false,"
+                          "\"closeOnFocusLoss\":true}}");
+        QSignalSpy saved(f.dialog.get(), &SettingsDialog::saved);
+        auto *style = child<QComboBox>(f.dialog.get(), u"chooserStyleCombo"_s);
+        auto *size = child<QSpinBox>(f.dialog.get(), u"iconSizeSpin"_s);
+        auto *names = child<QCheckBox>(f.dialog.get(), u"showNamesCheck"_s);
+        auto *focus = child<QCheckBox>(f.dialog.get(), u"closeOnFocusLossCheck"_s);
+        QCOMPARE(style->currentData().toString(), u"horizontal"_s);
+        QCOMPARE(size->value(), 64);
+        QVERIFY(size->isEnabled());
+        QVERIFY(!names->isChecked());
+        QVERIFY(focus->isChecked());
+
+        focus->setChecked(false);
+        size->setValue(32);
+        f.button(QDialogButtonBox::Ok)->click();
+        QVERIFY(!f.dialog->isVisible());
+        QCOMPARE(saved.size(), 1);
+        const kbs::ChooserSettings expected{kbs::ChooserStyle::Horizontal, 32, false, false};
+        QCOMPARE(saved.first().at(0).value<Config>().chooser, expected);
+        QCOMPARE(f.savedConfig().chooser, expected);
+    }
+
+    void appearanceCancelChangesNothing()
+    {
+        SettingsFixture f(TwoRules);
+        const QByteArray before = f.fileBytes();
+        QSignalSpy saved(f.dialog.get(), &SettingsDialog::saved);
+        auto *style = child<QComboBox>(f.dialog.get(), u"chooserStyleCombo"_s);
+        style->setCurrentIndex(style->findData(u"horizontal"_s));
+        child<QCheckBox>(f.dialog.get(), u"closeOnFocusLossCheck"_s)->setChecked(true);
+        f.button(QDialogButtonBox::Cancel)->click();
+        QVERIFY(!f.dialog->isVisible());
+        QCOMPARE(saved.size(), 0);
+        QCOMPARE(f.fileBytes(), before);
+    }
+
+    void reloadShowsTheAppearanceFromDisk()
+    {
+        SettingsFixture f(TwoRules);
+        f.writeConfig("{\"version\":1,\"chooser\":{\"style\":\"horizontal\",\"iconSize\":112}}");
+        child<QCheckBox>(f.dialog.get(), u"closeOnFocusLossCheck"_s)->setChecked(true);
+        QVERIFY(!f.dialog->apply());
+        for (QAction *action : f.message()->actions()) {
+            if (action->text().contains(u"Reload"_s)) {
+                action->trigger();
+            }
+        }
+        QCOMPARE(child<QComboBox>(f.dialog.get(), u"chooserStyleCombo"_s)->currentData().toString(), u"horizontal"_s);
+        QCOMPARE(child<QSpinBox>(f.dialog.get(), u"iconSizeSpin"_s)->value(), 112);
+        QVERIFY(child<QSpinBox>(f.dialog.get(), u"iconSizeSpin"_s)->isEnabled());
+        QVERIFY(!child<QCheckBox>(f.dialog.get(), u"closeOnFocusLossCheck"_s)->isChecked());
+        QVERIFY(f.dialog->apply());
+        QCOMPARE(f.savedConfig().chooser, (kbs::ChooserSettings{kbs::ChooserStyle::Horizontal, 112, true, false}));
+    }
+
     void rescanMergesWithoutLosingSettings()
     {
         SettingsFixture f("{\"version\":1,\"browsers\":[{\"id\":\"gamma.desktop\"},{\"id\":\"beta.desktop\",\"name\":\"Beta Mine\"},{\"id\":\"alpha.desktop\",\"removed\":true}]}");
@@ -796,7 +953,7 @@ private Q_SLOTS:
         const QString suffix = dark ? u"dark"_s : u"light"_s;
         SettingsFixture f(TwoRules);
         f.dialog->resize(900, 680);
-        for (const QString &page : {u"browsers"_s, u"rules"_s, u"privacy"_s, u"about"_s}) {
+        for (const QString &page : {u"browsers"_s, u"appearance"_s, u"rules"_s, u"privacy"_s, u"about"_s}) {
             f.dialog->showPage(page);
             if (page == u"rules"_s) {
                 f.showRule(1);

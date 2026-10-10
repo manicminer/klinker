@@ -233,12 +233,91 @@ bool readRule(Reader &reader, const QJsonValue &value, const QString &path, Rule
     return true;
 }
 
+// Values that could make an unusable window are rejected, not adjusted.
+bool readChooser(Reader &reader, const QJsonValue &value, ChooserSettings *out)
+{
+    const QString path = u"chooser"_s;
+    if (!value.isObject()) {
+        return reader.fail(path, u"expected an object."_s);
+    }
+    const QJsonObject object = value.toObject();
+    reader.warnUnknownKeys(object, path, {"style"_L1, "iconSize"_L1, "showBrowserNames"_L1, "closeOnFocusLoss"_L1});
+
+    ChooserSettings settings;
+    std::optional<QString> style;
+    if (!reader.readString(object, path, u"style"_s, &style)) {
+        return false;
+    }
+    if (style) {
+        const auto parsed = chooserStyleFromString(*style);
+        if (!parsed) {
+            return reader.fail(path + u".style"_s, u"unknown style “%1”; use vertical or horizontal."_s.arg(*style));
+        }
+        settings.style = *parsed;
+    }
+
+    const QJsonValue size = object.value("iconSize"_L1);
+    if (!size.isUndefined()) {
+        const double number = size.toDouble(-1);
+        if (!size.isDouble() || number != std::floor(number) || number < ChooserSettings::MinIconSize
+            || number > ChooserSettings::MaxIconSize) {
+            return reader.fail(path + u".iconSize"_s,
+                               u"expected a whole number of pixels from %1 to %2."_s.arg(ChooserSettings::MinIconSize).arg(ChooserSettings::MaxIconSize));
+        }
+        settings.iconSize = int(number);
+    }
+
+    if (!reader.readBool(object, path, u"showBrowserNames"_s, &settings.showBrowserNames)
+        || !reader.readBool(object, path, u"closeOnFocusLoss"_s, &settings.closeOnFocusLoss)) {
+        return false;
+    }
+    *out = settings;
+    return true;
+}
+
 QByteArray digest(const QByteArray &bytes)
 {
     return QCryptographicHash::hash(bytes, QCryptographicHash::Sha256);
 }
 
+// An error when the file is not as it was loaded, or is malformed.
+QString checkUnchanged(const QString &path, const std::optional<QByteArray> &loadedDigest)
+{
+    std::optional<QByteArray> currentDigest;
+    QFile current(path);
+    if (current.exists()) {
+        if (!current.open(QIODevice::ReadOnly)) {
+            return u"Cannot read %1: %2"_s.arg(path, current.errorString());
+        }
+        const QByteArray bytes = current.readAll();
+        if (!configFromJson(bytes).config) {
+            return u"%1 is not a valid configuration file; fix or move it before saving."_s.arg(path);
+        }
+        currentDigest = digest(bytes);
+    }
+    if (currentDigest != loadedDigest) {
+        return u"%1 was changed by another program since it was loaded; reload it and try again."_s.arg(path);
+    }
+    return {};
+}
+
 } // namespace
+
+QString chooserStyleToString(ChooserStyle style)
+{
+    return style == ChooserStyle::Horizontal ? u"horizontal"_s : u"vertical"_s;
+}
+
+std::optional<ChooserStyle> chooserStyleFromString(const QString &text)
+{
+    if (text == u"vertical"_s) {
+        return ChooserStyle::Vertical;
+    }
+    if (text == u"horizontal"_s) {
+        return ChooserStyle::Horizontal;
+    }
+    return std::nullopt;
+}
 
 QByteArray configToJson(const Config &config)
 {
@@ -258,6 +337,13 @@ QByteArray configToJson(const Config &config)
          QJsonObject{
              {u"stripTrackingParameters"_s, config.privacy.stripTrackingParameters},
              {u"unwrapRedirects"_s, config.privacy.unwrapRedirects},
+         }},
+        {u"chooser"_s,
+         QJsonObject{
+             {u"style"_s, chooserStyleToString(config.chooser.style)},
+             {u"iconSize"_s, config.chooser.iconSize},
+             {u"showBrowserNames"_s, config.chooser.showBrowserNames},
+             {u"closeOnFocusLoss"_s, config.chooser.closeOnFocusLoss},
          }},
     };
     return QJsonDocument(root).toJson(QJsonDocument::Indented);
@@ -307,7 +393,7 @@ ConfigParseResult configFromJson(const QByteArray &json)
         return failed();
     }
 
-    reader.warnUnknownKeys(root, QString(), {"version"_L1, "browsers"_L1, "rules"_L1, "privacy"_L1});
+    reader.warnUnknownKeys(root, QString(), {"version"_L1, "browsers"_L1, "rules"_L1, "privacy"_L1, "chooser"_L1});
     Config config;
 
     QJsonArray browsers;
@@ -355,15 +441,26 @@ ConfigParseResult configFromJson(const QByteArray &json)
         }
     }
 
+    const QJsonValue chooser = root.value("chooser"_L1);
+    if (!chooser.isUndefined() && !readChooser(reader, chooser, &config.chooser)) {
+        return failed();
+    }
+
     return {config, QString(), reader.warnings};
 }
 
-ConfigStore::ConfigStore(const QString &path)
+ConfigStore::ConfigStore(const QString &path, const QString &legacyPath)
     : m_path(path)
+    , m_legacyPath(legacyPath)
 {
 }
 
 QString ConfigStore::defaultPath()
+{
+    return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + u"/klinker/config.json"_s;
+}
+
+QString ConfigStore::legacyDefaultPath()
 {
     return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + u"/kde-browser-switcher/config.json"_s;
 }
@@ -373,29 +470,56 @@ QString ConfigStore::path() const
     return m_path;
 }
 
+QString ConfigStore::legacyPath() const
+{
+    return m_legacyPath;
+}
+
+QString ConfigStore::sourcePath() const
+{
+    return m_sourcePath.isEmpty() ? m_path : m_sourcePath;
+}
+
 ConfigStore::LoadResult ConfigStore::load()
 {
     m_loaded = true;
     m_loadedDigest.reset();
+    m_legacyLoaded = false;
+    m_legacyDigest.reset();
+    m_sourcePath = m_path;
 
-    QFile file(m_path);
+    if (QFile::exists(m_path) || m_legacyPath.isEmpty()) {
+        return read(m_path, &m_loadedDigest);
+    }
+    m_legacyLoaded = true;
+    if (!QFile::exists(m_legacyPath)) {
+        return {LoadStatus::Missing, Config(), QString(), {}};
+    }
+    m_sourcePath = m_legacyPath;
+    return read(m_legacyPath, &m_legacyDigest);
+}
+
+ConfigStore::LoadResult ConfigStore::read(const QString &path, std::optional<QByteArray> *fileDigest)
+{
+    QFile file(path);
     if (!file.exists()) {
         return {LoadStatus::Missing, Config(), QString(), {}};
     }
     if (!file.open(QIODevice::ReadOnly)) {
         // Remember that something is there so that save() re-checks it.
-        m_loadedDigest = QByteArray();
-        return {LoadStatus::Invalid, Config(), u"Cannot read %1: %2"_s.arg(m_path, file.errorString()), {}};
+        *fileDigest = QByteArray();
+        return {LoadStatus::Invalid, Config(), u"Cannot read %1: %2"_s.arg(path, file.errorString()), {}};
     }
     const QByteArray bytes = file.readAll();
-    m_loadedDigest = digest(bytes);
+    *fileDigest = digest(bytes);
 
     const ConfigParseResult parsed = configFromJson(bytes);
     if (!parsed.config) {
-        return {LoadStatus::Invalid, Config(), u"%1: %2"_s.arg(m_path, parsed.error), parsed.warnings};
+        return {LoadStatus::Invalid, Config(), u"%1: %2"_s.arg(path, parsed.error), parsed.warnings};
     }
     return {LoadStatus::Loaded, *parsed.config, QString(), parsed.warnings};
 }
+
 
 ConfigStore::SaveResult ConfigStore::save(const Config &config)
 {
@@ -422,21 +546,15 @@ ConfigStore::SaveResult ConfigStore::save(const Config &config)
                                                            : u"Cannot lock %1 for saving."_s.arg(m_path)};
     }
 
-    std::optional<QByteArray> currentDigest;
-    QFile current(m_path);
-    if (current.exists()) {
-        if (!current.open(QIODevice::ReadOnly)) {
-            return {false, u"Cannot read %1: %2"_s.arg(m_path, current.errorString())};
-        }
-        const QByteArray bytes = current.readAll();
-        current.close();
-        if (!configFromJson(bytes).config) {
-            return {false, u"%1 is not a valid configuration file; fix or move it before saving."_s.arg(m_path)};
-        }
-        currentDigest = digest(bytes);
+    if (const QString error = checkUnchanged(m_path, m_loadedDigest); !error.isEmpty()) {
+        return {false, error};
     }
-    if (currentDigest != m_loadedDigest) {
-        return {false, u"%1 was changed by another program since it was loaded; reload it and try again."_s.arg(m_path)};
+    // The legacy file is only read, never locked or written; an earlier version
+    // saving it meanwhile changes its digest.
+    if (m_legacyLoaded) {
+        if (const QString error = checkUnchanged(m_legacyPath, m_legacyDigest); !error.isEmpty()) {
+            return {false, error};
+        }
     }
 
     QSaveFile file(m_path);
@@ -444,6 +562,9 @@ ConfigStore::SaveResult ConfigStore::save(const Config &config)
         return {false, u"Cannot save %1: %2"_s.arg(m_path, file.errorString())};
     }
     m_loadedDigest = digest(json);
+    m_legacyLoaded = false;
+    m_legacyDigest.reset();
+    m_sourcePath = m_path;
     return {true, QString()};
 }
 

@@ -6,6 +6,7 @@
 #include <QSize>
 #include <QString>
 
+#include <functional>
 #include <optional>
 
 class QWidget;
@@ -57,6 +58,11 @@ Placement planPlacement(const PlacementRequest &request);
 // unless the area is too small to keep it at all.
 QSize maximumSize(const QRect &available, int margin);
 
+// Where a window at `current` goes when its content asks for `preferred`: the
+// size bounded by the available area (as maximumSize()), the horizontal centre
+// and top kept, then moved fully inside the area.
+QRect fitToArea(const QRect &current, QSize preferred, const QRect &available, int margin);
+
 // The global cursor position if the platform reports it reliably. Native
 // Wayland clients only learn it once the pointer enters one of their surfaces,
 // so it is never trusted there. On X11 every position, including (0, 0), is real.
@@ -77,5 +83,11 @@ struct PopupPlacement {
 // centres it on the chosen output); elsewhere it is moved to the planned
 // geometry. Must be called before the window is mapped.
 PopupPlacement placePopup(QWidget *window, QSize preferredSize);
+
+// The same for content whose height depends on the width it gets: called with
+// an invalid size for the natural size, then with the maximum size on the
+// chosen screen if the natural size does not fit there.
+using PreferredSizeFunction = std::function<QSize(const QSize &maximum)>;
+PopupPlacement placePopup(QWidget *window, const PreferredSizeFunction &preferredSize);
 
 } // namespace kbs

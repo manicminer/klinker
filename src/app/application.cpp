@@ -18,14 +18,18 @@ namespace kbs
 SelfIdentity appSelfIdentity()
 {
     SelfIdentity self = SelfIdentity::current();
-    self.desktopId = AppId.toString() + u".desktop"_s;
+    const QString desktopId = AppId.toString() + u".desktop"_s;
+    self.desktopIds.removeAll(desktopId);
+    self.desktopIds.prepend(desktopId);
     return self;
 }
 
 Application::Application(const Options &options, QObject *parent)
     : QObject(parent)
     , m_options(options)
-    , m_store(std::make_unique<ConfigStore>(options.configPath.isEmpty() ? ConfigStore::defaultPath() : options.configPath))
+    // Only the default location falls back to the file of Browser Switcher.
+    , m_store(std::make_unique<ConfigStore>(options.configPath.isEmpty() ? ConfigStore(ConfigStore::defaultPath(), ConfigStore::legacyDefaultPath())
+                                                                         : ConfigStore(options.configPath)))
 {
     const ConfigStore::LoadResult loaded = m_store->load();
     m_config = loaded.config;
@@ -33,7 +37,7 @@ Application::Application(const Options &options, QObject *parent)
         m_loadError = loaded.error;
     }
     for (const QString &warning : loaded.warnings) {
-        qWarning().noquote() << m_store->path() << warning;
+        qWarning().noquote() << m_store->sourcePath() << warning;
     }
     m_detected = discoverBrowsers(m_options.dataDirs.value_or(defaultDataDirs()), m_options.self).browsers;
     m_catalog = BrowserCatalog(m_detected, m_config.browsers);
@@ -113,7 +117,17 @@ void Application::onProcessed(const ProcessedLink &link)
         m_routePending = true; // decided with the final settings once they close
         return;
     }
+    if (m_chooser && m_chooser->isFocusLossPending()) {
+        // Dropped if the chooser is cancelled, routed if the user is still there.
+        m_routePending = true;
+        return;
+    }
     route();
+}
+
+bool Application::isRoutingDeferred() const
+{
+    return m_current && m_routePending;
 }
 
 void Application::route()
@@ -157,8 +171,16 @@ void Application::ensureChooser()
         }
         finishCurrent();
     });
+    connect(m_chooser, &ChooserWindow::focusLossResolved, this, [this, chooser = m_chooser.data()] {
+        // While the settings are open, routing waits for them instead.
+        if (chooser == m_chooser && m_current && m_routePending && !m_settings && !chooser->isFocusLossPending()) {
+            m_routePending = false;
+            route();
+        }
+    });
     connect(m_chooser, &ChooserWindow::settingsRequested, this, &Application::openSettings);
     connect(m_chooser, &ChooserWindow::resolutionSkipped, &m_pipeline, &LinkPipeline::skip);
+    m_chooser->setPreferences(m_config.chooser);
     refreshChooserBrowsers();
 }
 
@@ -185,8 +207,14 @@ void Application::showChooser(const QString &error)
         return; // shown again when the settings close
     }
     if (!m_chooser->property("kbsPlaced").toBool()) {
-        placePopup(m_chooser, m_chooser->preferredSize());
+        placePopup(m_chooser, [chooser = m_chooser.data()](const QSize &maximum) {
+            return chooser->preferredSize(maximum);
+        });
         m_chooser->setProperty("kbsPlaced", true);
+    } else {
+        // Back from the settings, perhaps in another style or with other
+        // browsers: sized again on the screen it was on.
+        m_chooser->refit();
     }
     m_chooser->show();
     m_chooser->raise();
@@ -276,6 +304,9 @@ void Application::openSettings()
             m_chooser->clearError();
         }
         m_loadError.clear();
+        if (m_chooser) {
+            m_chooser->setPreferences(m_config.chooser);
+        }
         refreshChooserBrowsers();
         if (privacyChanged && m_busy) {
             // What was routed, shown and launched must all come from one run.

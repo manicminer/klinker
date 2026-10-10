@@ -21,6 +21,7 @@
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QSpinBox>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
@@ -122,6 +123,7 @@ SettingsDialog::SettingsDialog(const Context &context, QWidget *parent)
     , m_detected(context.detected)
     , m_rules(context.config.rules)
     , m_privacy(context.config.privacy)
+    , m_chooser(context.config.chooser)
     , m_dataDirs(context.dataDirs)
     , m_self(context.self)
 {
@@ -165,6 +167,8 @@ SettingsDialog::SettingsDialog(const Context &context, QWidget *parent)
         m_pages.insert(key, item);
     };
     add(u"browsers"_s, createBrowsersPage(), u"Browsers"_s, u"Browsers in the chooser"_s, u"internet-web-browser"_s);
+    add(u"appearance"_s, createAppearancePage(), u"Appearance"_s, u"How the chooser looks and when it closes"_s,
+        u"preferences-desktop-theme-global,preferences-desktop-theme,preferences-desktop"_s);
     add(u"rules"_s, createRulesPage(), u"Routing Rules"_s, u"Open matching links without asking"_s, u"view-filter"_s);
     add(u"privacy"_s, createPrivacyPage(), u"Privacy"_s, u"Link preprocessing"_s, u"preferences-system-privacy,security-high"_s);
     add(u"about"_s, createAboutPage(), u"About"_s, AppDisplayName.toString(), u"help-about"_s);
@@ -242,6 +246,81 @@ QWidget *SettingsDialog::createBrowsersPage()
     row->addLayout(buttons);
     root->addLayout(row, 1);
     return page;
+}
+
+QWidget *SettingsDialog::createAppearancePage()
+{
+    auto *page = new QWidget(this);
+    auto *root = new QVBoxLayout(page);
+    root->setContentsMargins(0, 0, 0, 0);
+    auto *form = new QFormLayout;
+
+    m_chooserStyle = new QComboBox(page);
+    m_chooserStyle->setObjectName(u"chooserStyleCombo"_s);
+    m_chooserStyle->addItem(u"Vertical list"_s, chooserStyleToString(ChooserStyle::Vertical));
+    m_chooserStyle->addItem(u"Horizontal icons"_s, chooserStyleToString(ChooserStyle::Horizontal));
+    form->addRow(u"&Layout:"_s, m_chooserStyle);
+
+    m_iconSize = new QSpinBox(page);
+    m_iconSize->setObjectName(u"iconSizeSpin"_s);
+    m_iconSize->setRange(ChooserSettings::MinIconSize, ChooserSettings::MaxIconSize);
+    m_iconSize->setSingleStep(8);
+    m_iconSize->setSuffix(u" px"_s);
+    m_iconSize->setToolTip(u"Size of the browser icons in the horizontal chooser"_s);
+    form->addRow(u"&Icon size:"_s, m_iconSize);
+    m_showNames = new QCheckBox(u"Show browser &names under the icons"_s, page);
+    m_showNames->setObjectName(u"showNamesCheck"_s);
+    m_showNames->setToolTip(u"Without names, hover an icon or use a screen reader to hear which browser it is"_s);
+    form->addRow(QString(), m_showNames);
+    root->addLayout(form);
+    root->addWidget(subduedLabel(u"The vertical list shows each browser with its name and command. The horizontal strip shows "
+                                 u"the icons side by side and scrolls when they do not fit; the icon size and names only apply "
+                                 u"to it."_s,
+                                 page));
+    root->addSpacing(12);
+
+    m_closeOnFocusLoss = new QCheckBox(u"&Close the chooser when it loses focus"_s, page);
+    m_closeOnFocusLoss->setObjectName(u"closeOnFocusLossCheck"_s);
+    root->addWidget(m_closeOnFocusLoss);
+    auto *focusHelp = subduedLabel(u"Switching to another window then cancels the link, as Esc does; the next waiting link, "
+                                   u"if any, is shown. Settings and the chooser's own controls do not close it."_s,
+                                   page);
+    focusHelp->setContentsMargins(24, 0, 0, 0);
+    root->addWidget(focusHelp);
+    root->addStretch(1);
+
+    refreshAppearance();
+    connect(m_chooserStyle, &QComboBox::currentIndexChanged, this, [this] {
+        m_chooser.style = chooserStyleFromString(m_chooserStyle->currentData().toString()).value_or(ChooserStyle::Vertical);
+        refreshAppearance();
+    });
+    connect(m_iconSize, &QSpinBox::valueChanged, this, [this](int size) {
+        m_chooser.iconSize = size;
+    });
+    connect(m_showNames, &QCheckBox::toggled, this, [this](bool on) {
+        m_chooser.showBrowserNames = on;
+    });
+    connect(m_closeOnFocusLoss, &QCheckBox::toggled, this, [this](bool on) {
+        m_chooser.closeOnFocusLoss = on;
+    });
+    return page;
+}
+
+// Shows m_chooser. The icon size and names only apply to the horizontal
+// chooser; they stay as they are, only disabled, for the vertical one.
+void SettingsDialog::refreshAppearance()
+{
+    const QSignalBlocker blockStyle(m_chooserStyle);
+    const QSignalBlocker blockSize(m_iconSize);
+    const QSignalBlocker blockNames(m_showNames);
+    const QSignalBlocker blockFocus(m_closeOnFocusLoss);
+    m_chooserStyle->setCurrentIndex(std::max(0, m_chooserStyle->findData(chooserStyleToString(m_chooser.style))));
+    m_iconSize->setValue(m_chooser.iconSize);
+    m_showNames->setChecked(m_chooser.showBrowserNames);
+    m_closeOnFocusLoss->setChecked(m_chooser.closeOnFocusLoss);
+    const bool horizontal = m_chooser.style == ChooserStyle::Horizontal;
+    m_iconSize->setEnabled(horizontal);
+    m_showNames->setEnabled(horizontal);
 }
 
 QWidget *SettingsDialog::createRulesPage()
@@ -441,8 +520,16 @@ QWidget *SettingsDialog::createAboutPage()
         return label;
     };
     form->addRow(u"Configuration file:"_s, value(m_store ? m_store->path() : QString()));
+    // Until the first save, settings of Browser Switcher (the earlier name) are used.
+    m_legacySource = value(QString());
+    m_legacySource->setObjectName(u"legacySourceLabel"_s);
+    m_legacySource->setToolTip(u"Settings of Browser Switcher, the earlier name of %1. They are saved to the configuration "
+                               u"file above with Apply or OK; this file is left as it is."_s.arg(AppDisplayName));
+    form->addRow(u"Read from:"_s, m_legacySource);
+    m_aboutForm = form;
+    updateSourceRow();
     form->addRow(u"Desktop file:"_s, value(AppId.toString() + u".desktop"_s));
-    form->addRow(u"Command:"_s, value(u"kde-browser-switcher [--settings] [--choose] [--config FILE] [URL…]"_s));
+    form->addRow(u"Command:"_s, value(u"klinker [--settings] [--choose] [--config FILE] [URL…]"_s));
     root->addLayout(form);
     root->addWidget(subduedLabel(u"No browsing history is stored and nothing is sent anywhere unless redirect following is "
                                  u"turned on."_s,
@@ -465,7 +552,7 @@ Config SettingsDialog::draftConfig() const
             browsers.append(setting);
         }
     }
-    return {browsers, m_rules, m_privacy};
+    return {browsers, m_rules, m_privacy, m_chooser};
 }
 
 QList<DetectedBrowser> SettingsDialog::detectedBrowsers() const
@@ -512,6 +599,7 @@ bool SettingsDialog::apply()
     }
     // Later rescans start from the order just saved, as if the dialog had been reopened.
     m_catalog = BrowserCatalog(m_detected, config.browsers);
+    updateSourceRow();
     showMessage(u"Settings saved."_s, KMessageWidget::Positive);
     Q_EMIT saved(config, m_detected);
     return true;
@@ -543,6 +631,13 @@ void SettingsDialog::showMessage(const QString &text, int type)
     m_message->show();
 }
 
+void SettingsDialog::updateSourceRow()
+{
+    const bool legacy = m_store && m_store->sourcePath() != m_store->path();
+    m_legacySource->setText(legacy ? m_store->sourcePath() : QString());
+    m_aboutForm->setRowVisible(m_legacySource, legacy);
+}
+
 void SettingsDialog::setSavingAllowed(bool allowed)
 {
     m_savingAllowed = allowed;
@@ -559,6 +654,9 @@ void SettingsDialog::reload()
     m_catalog = BrowserCatalog(m_detected, loaded.config.browsers);
     m_rules = loaded.config.rules;
     m_privacy = loaded.config.privacy;
+    m_chooser = loaded.config.chooser;
+    refreshAppearance();
+    updateSourceRow();
     m_stripTracking->setChecked(m_privacy.stripTrackingParameters);
     m_unwrapRedirects->setChecked(m_privacy.unwrapRedirects);
     refreshBrowsers();

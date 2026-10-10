@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(kde-browser-switcher VERSION 0.1.0 LANGUAGES CXX)
+project(klinker VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -12,7 +12,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 include(GNUInstallDirs)
 
 # Desktop file ID (without ".desktop"), also used as the icon name.
-set(KBS_APP_ID "io.github.manicminer.KdeBrowserSwitcher")
+set(KBS_APP_ID "io.github.manicminer.Klinker")
 
 find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Widgets Network DBus)
 find_package(KF6Config 6.0 REQUIRED)
@@ -33,6 +33,8 @@ add_subdirectory(data)
 
 if(BUILD_TESTING)
     find_package(Qt6 6.5 REQUIRED COMPONENTS Test)
+    # QWindowSystemInterface, for tests that report focus changes as the platform would.
+    find_package(Qt6 6.5 QUIET OPTIONAL_COMPONENTS GuiPrivate)
     find_package(KF6ColorScheme 6.0 REQUIRED)
     add_subdirectory(tests)
 endif()

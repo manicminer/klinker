@@ -112,6 +112,13 @@ QVariant BrowserFilterModel::data(const QModelIndex &index, int role) const
         const QString name = QSortFilterProxyModel::data(index, Qt::DisplayRole).toString();
         return shortcut ? u"%1, press %2"_s.arg(name).arg(shortcut) : name;
     }
+    // Names may be hidden (horizontal chooser), so the tooltip always has one.
+    if (role == Qt::ToolTipRole) {
+        const QString name = QSortFilterProxyModel::data(index, Qt::DisplayRole).toString().toHtmlEscaped();
+        const QString detail = QSortFilterProxyModel::data(index, BrowserListModel::DetailRole).toString().toHtmlEscaped();
+        const QString title = shortcut ? u"<b>%1</b> — press %2"_s.arg(name).arg(shortcut) : u"<b>%1</b>"_s.arg(name);
+        return detail.isEmpty() ? u"<qt>%1</qt>"_s.arg(title) : u"<qt>%1<br>%2</qt>"_s.arg(title, detail);
+    }
     return QSortFilterProxyModel::data(index, role);
 }
 

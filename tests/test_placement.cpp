@@ -162,6 +162,49 @@ private Q_SLOTS:
         QCOMPARE(kbs::maximumSize(QRect(0, 0, 12, 10), 8), QSize(12, 10));
     }
 
+    // Refitting a shown window to new content (another chooser style, more
+    // browsers) keeps it on the screen it is on.
+
+    void refitKeepsTheCentreAndTop()
+    {
+        const QRect available = twoScreens().at(0).available;
+        QCOMPARE(kbs::fitToArea(QRect(1000, 800, 430, 360), QSize(900, 200), available, 8), QRect(765, 800, 900, 200));
+        // Same width: only the height changes, as when details open.
+        QCOMPARE(kbs::fitToArea(QRect(1000, 800, 430, 360), QSize(430, 500), available, 8), QRect(1000, 800, 430, 500));
+    }
+
+    void refitIsClampedToTheScreen_data()
+    {
+        QTest::addColumn<QRect>("current");
+        QTest::addColumn<QSize>("preferred");
+        QTest::addColumn<QRect>("available");
+        QTest::addColumn<QRect>("expected");
+        const QRect eDP = twoScreens().at(1).available;
+        QTest::newRow("right edge") << QRect(6400 - 8 - 430, 600, 430, 360) << QSize(1200, 300) << eDP << QRect(6400 - 8 - 1200, 600, 1200, 300);
+        QTest::newRow("bottom edge") << QRect(4000, 1600, 430, 360) << QSize(430, 900) << eDP << QRect(4000, 2029 - 8 - 900, 430, 900);
+        QTest::newRow("wider than the screen") << QRect(4000, 600, 430, 360) << QSize(9000, 300) << eDP << QRect(3848, 600, 2544, 300);
+        const QRect hdmi = negativeOrigin().at(0).available;
+        // Next to DP-1, but must not spill onto it.
+        QTest::newRow("negative origin, shared edge") << QRect(-438, 100, 430, 360) << QSize(1000, 300) << hdmi << QRect(-9 - 1000 + 1, 100, 1000, 300);
+        QTest::newRow("negative origin, top left") << QRect(-1912, -292, 430, 360) << QSize(1000, 300) << hdmi << QRect(-1912, -292, 1000, 300);
+        QTest::newRow("small output") << QRect(-92, -42, 384, 264) << QSize(1200, 500) << QRect(-100, -50, 400, 280) << QRect(-92, -42, 384, 264);
+        QTest::newRow("smaller than the margins") << QRect(0, 0, 12, 10) << QSize(1200, 500) << QRect(0, 0, 12, 10) << QRect(0, 0, 12, 10);
+        // 2560x1600 at a scale of 2: everything is in logical pixels.
+        QTest::newRow("scaled output") << QRect(425, 220, 430, 360) << QSize(1600, 200) << QRect(0, 0, 1280, 800) << QRect(8, 220, 1264, 200);
+        QTest::newRow("window left on no screen") << QRect(9000, 9000, 430, 360) << QSize(430, 360) << eDP << QRect(6400 - 8 - 430, 2029 - 8 - 360, 430, 360);
+    }
+
+    void refitIsClampedToTheScreen()
+    {
+        QFETCH(QRect, current);
+        QFETCH(QSize, preferred);
+        QFETCH(QRect, available);
+        QFETCH(QRect, expected);
+        const QRect fitted = kbs::fitToArea(current, preferred, available, 8);
+        QCOMPARE(fitted, expected);
+        QVERIFY(available.contains(fitted));
+    }
+
     void cursorIsOnlyTrustedWhereThePlatformReportsIt()
     {
         QCOMPARE(kbs::reliableCursorPosition(u"xcb"_s, QPoint(0, 0)), std::optional<QPoint>(QPoint(0, 0)));
