@@ -25,9 +25,11 @@ Exit status is 0 otherwise, including when the chooser is cancelled.
 
 The chooser is a vertical list by default. *Settings → Appearance* switches it
 to a horizontal strip of icons, with a choice of icon size (24–128 pixels) and
-whether names are shown under the icons. A few icons are centred rather than
-stretched; when they do not fit on the screen the strip scrolls sideways
-(scroll bar, mouse wheel or keyboard). Without names, hovering an icon shows
+whether names are shown under the icons. The window widens to show every icon;
+a few icons are centred rather than stretched. Only when they do not fit on the
+screen does the strip scroll, and only sideways (scroll bar, mouse wheel or
+keyboard). On a screen too low for a whole row of the chosen size, the icons
+are shown smaller instead; the setting is kept. Without names, hovering an icon shows
 the browser's name and number, and screen readers announce both.
 
 | Key | Action |

@@ -28,6 +28,7 @@
 #endif
 
 #include <cmath>
+#include <optional>
 
 using namespace Qt::StringLiterals;
 using kbs::ChooserEntry;
@@ -56,6 +57,21 @@ kbs::ChooserSettings horizontal(int iconSize = 48, bool names = true)
 {
     return {kbs::ChooserStyle::Horizontal, iconSize, names, false};
 }
+
+// The browsers of the reported chooser, whose names fill their tiles.
+QList<ChooserEntry> reportedEntries()
+{
+    QList<ChooserEntry> result;
+    for (const QString &name : {u"ChatGPT"_s, u"Chromium"_s, u"Falkon"_s, u"Firefox"_s, u"LibreWolf"_s, u"Switchyard"_s}) {
+        result.append({name.toLower() + u".desktop"_s, name, u"internet-web-browser"_s, name.toLower() + u" · Detected"_s});
+    }
+    return result;
+}
+
+// Widget styles the sizing is checked with: Breeze, the default, Oxygen, whose
+// scroll bars are outside the frame and so shrink the contents rectangle, and
+// Fusion. Rows for styles that are not installed are skipped.
+const QStringList Styles{u"Breeze"_s, u"Oxygen"_s, u"Fusion"_s};
 
 kbs::ChooserSettings closingOnFocusLoss()
 {
@@ -93,6 +109,25 @@ struct Fixture {
         return list->visualRect(list->model()->index(row, 0));
     }
 };
+
+// Sizes, places and shows the window as Application::showChooser() does.
+void showAsTheApplication(ChooserWindow &window)
+{
+    kbs::placePopup(&window, [&window](const QSize &maximum) {
+        return window.preferredSize(maximum);
+    });
+    window.show();
+    window.raise();
+    window.activateWindow();
+    if (!QTest::qWaitForWindowActive(&window)) {
+        qWarning("chooser window did not become active");
+    }
+}
+
+QSize screenMaximum(const QWidget *window)
+{
+    return kbs::maximumSize(window->screen()->availableGeometry(), 8);
+}
 
 // Sends a key to the window as the platform would, so it reaches whichever
 // widget has keyboard focus (QTest::keyClick(QWidget *) bypasses focus). With
@@ -1003,18 +1038,28 @@ private Q_SLOTS:
 
     void horizontalCardFitsASmallScreen_data()
     {
+        QTest::addColumn<QString>("style");
         QTest::addColumn<int>("iconSize");
         QTest::addColumn<QRect>("screen");
-        QTest::newRow("48 px on 400x320") << 48 << QRect(0, 0, 400, 320);
-        QTest::newRow("128 px on 400x280") << 128 << QRect(-400, -50, 400, 280);
+        for (const QString &style : Styles) {
+            QTest::addRow("%s, 48 px on 400x320", qPrintable(style)) << style << 48 << QRect(0, 0, 400, 320);
+            QTest::addRow("%s, 128 px on 400x280", qPrintable(style)) << style << 128 << QRect(-400, -50, 400, 280);
+        }
     }
 
     // Large icons on a small screen: the window stays on the screen and every
-    // browser, the link and the footer can still be reached.
+    // browser, the link and the footer can still be reached. The row is never
+    // scrolled vertically: if a whole tile would not fit, the icons are shown
+    // smaller, while the preference is kept.
     void horizontalCardFitsASmallScreen()
     {
+        QFETCH(QString, style);
         QFETCH(int, iconSize);
         QFETCH(QRect, screen);
+        if (!kbs::test::hasStyle(style)) {
+            QSKIP("style not installed");
+        }
+        kbs::test::ThemeScope theme(style);
         ChooserWindow window;
         window.setPreferences(horizontal(iconSize, true));
         window.setOriginalUrl(Url);
@@ -1032,6 +1077,10 @@ private Q_SLOTS:
         window.activateWindow();
         QVERIFY(QTest::qWaitForWindowActive(&window));
         QCOMPARE(window.size(), placement.geometry.size());
+        QCOMPARE(window.preferences(), horizontal(iconSize, true));
+        // 48 px fit; 128 px tiles would not, so smaller icons are shown.
+        QVERIFY(window.shownIconSize() >= kbs::ChooserSettings::MinIconSize);
+        QVERIFY(iconSize == 48 ? window.shownIconSize() == iconSize : window.shownIconSize() < iconSize);
 
         QString why;
         for (const QString &name : {u"finalUrlLabel"_s, u"copyUrlButton"_s, u"detailsButton"_s, u"settingsButton"_s, u"cancelButton"_s}) {
@@ -1040,17 +1089,17 @@ private Q_SLOTS:
         auto *list = child<QListView>(&window, u"browserList"_s);
         const QRect listRect(list->mapTo(&window, QPoint()), list->size());
         QVERIFY(window.rect().contains(listRect));
-        // Whole tiles can be scrolled into view in both directions.
-        const QRect tile = list->visualRect(list->model()->index(0, 0));
-        QVERIFY(list->verticalScrollBar()->maximum() + list->viewport()->height() >= tile.height());
+        const QString problem = kbs::test::horizontalStripProblem(list);
+        QVERIFY2(problem.isEmpty(), qPrintable(problem));
         QVERIFY(list->horizontalScrollBar()->maximum() > 0);
         QCOMPARE(QApplication::focusWidget(), list);
         QSignalSpy chosen(&window, &ChooserWindow::browserChosen);
         press(&window, Qt::Key_End);
+        QTRY_VERIFY(list->viewport()->rect().contains(list->visualRect(list->model()->index(11, 0))));
         press(&window, Qt::Key_Return);
         QTRY_COMPARE(chosen.size(), 1);
         QCOMPARE(chosen.takeFirst().at(0).toString(), u"b12.desktop"_s);
-        kbs::test::saveScreenshot(&window, u"chooser-horizontal-small-screen-%1"_s.arg(iconSize));
+        kbs::test::saveScreenshot(&window, u"chooser-horizontal-small-screen-%1-%2"_s.arg(iconSize).arg(style.toLower()));
     }
 
     void preferencesApplyToAShownChooser()
@@ -1142,6 +1191,268 @@ private Q_SLOTS:
             kbs::test::saveScreenshot(&f.window, u"chooser-horizontal-many-constrained-"_s + suffix);
         }
         kbs::test::applyTheme(false);
+    }
+
+    void horizontalStripFitsInEveryStyle_data()
+    {
+        QTest::addColumn<QString>("style");
+        QTest::addColumn<int>("count");
+        QTest::addColumn<int>("iconSize");
+        QTest::addColumn<bool>("names");
+        for (const QString &style : Styles) {
+            const QByteArray s = style.toLatin1();
+            QTest::addRow("%s, reported six named, 48", s.constData()) << style << 6 << 48 << true;
+            QTest::addRow("%s, one named, 48", s.constData()) << style << 1 << 48 << true;
+            QTest::addRow("%s, nine named, 24", s.constData()) << style << 9 << 24 << true;
+            QTest::addRow("%s, nine icons only, 48", s.constData()) << style << 9 << 48 << false;
+            QTest::addRow("%s, six named, 128", s.constData()) << style << 6 << 128 << true;
+            QTest::addRow("%s, many named, 64", s.constData()) << style << 30 << 64 << true;
+        }
+    }
+
+    // Shown as the application does: as wide as the whole row of tiles, so
+    // nothing scrolls, unless the screen is too narrow for it. Then the window
+    // is as wide as the screen allows and only scrolls horizontally, with the
+    // scroll bar below whole tiles.
+    void horizontalStripFitsInEveryStyle()
+    {
+        QFETCH(QString, style);
+        QFETCH(int, count);
+        QFETCH(int, iconSize);
+        QFETCH(bool, names);
+        if (!kbs::test::hasStyle(style)) {
+            QSKIP("style not installed");
+        }
+        kbs::test::ThemeScope theme(style);
+        ChooserWindow window;
+        window.setPreferences(horizontal(iconSize, names));
+        window.setOriginalUrl(u"https://www.kde.org/"_s);
+        window.setFinalUrl(u"https://www.kde.org/"_s, u"Opened as received."_s);
+        window.setBrowsers(count == 6 ? reportedEntries() : entries(count));
+        const QSize natural = window.preferredSize();
+        showAsTheApplication(window);
+        auto *list = child<QListView>(&window, u"browserList"_s);
+        const QSize maximum = screenMaximum(&window);
+        const bool fits = natural.width() <= maximum.width();
+
+        QCOMPARE(window.width(), std::min(natural.width(), maximum.width()));
+        QCOMPARE(window.size(), window.preferredSize(maximum));
+        QCOMPARE(window.shownIconSize(), iconSize);
+        const QString problem = kbs::test::horizontalStripProblem(list);
+        QVERIFY2(problem.isEmpty(), qPrintable(problem));
+        QCOMPARE(list->horizontalScrollBar()->isVisible(), !fits);
+        const QRect tile = list->visualRect(list->model()->index(0, 0));
+        QCOMPARE(list->viewport()->height(), tile.height());
+        if (fits) {
+            QCOMPARE(list->width(), count * tile.width() + 2 * list->frameWidth());
+        }
+        if (names) {
+            QVERIFY(tile.height() >= iconSize + list->fontMetrics().height());
+        }
+        QString why;
+        for (const QString &name : {u"finalUrlLabel"_s, u"detailsButton"_s, u"settingsButton"_s, u"cancelButton"_s}) {
+            QVERIFY2(reachable(child<QWidget>(&window, name), &window, &why), qPrintable(why));
+        }
+
+        // Both ends can be reached with the keyboard.
+        press(&window, Qt::Key_End);
+        QTRY_COMPARE(list->currentIndex().row(), count - 1);
+        QVERIFY(list->viewport()->rect().contains(list->visualRect(list->currentIndex())));
+        press(&window, Qt::Key_Home);
+        QTRY_COMPARE(list->currentIndex().row(), 0);
+        QVERIFY(list->viewport()->rect().contains(list->visualRect(list->currentIndex())));
+        if (count == 6 && iconSize == 48) {
+            kbs::test::saveScreenshot(&window, u"chooser-horizontal-reported-six-%1"_s.arg(style.toLower()));
+        } else if (count == 30) {
+            kbs::test::saveScreenshot(&window, u"chooser-horizontal-screen-limited-%1"_s.arg(style.toLower()));
+        }
+    }
+
+    void horizontalScrollsOnlyBeyondTheNaturalWidth_data()
+    {
+        QTest::addColumn<QString>("style");
+        for (const QString &style : Styles) {
+            QTest::newRow(qPrintable(style)) << style;
+        }
+    }
+
+    // At exactly the width of the row nothing scrolls; one pixel less and the
+    // strip scrolls horizontally, with exactly the scroll bar's height added.
+    void horizontalScrollsOnlyBeyondTheNaturalWidth()
+    {
+        QFETCH(QString, style);
+        if (!kbs::test::hasStyle(style)) {
+            QSKIP("style not installed");
+        }
+        kbs::test::ThemeScope theme(style);
+        ChooserWindow window;
+        window.setPreferences(horizontal(48, true));
+        window.setOriginalUrl(u"https://www.kde.org/"_s);
+        window.setFinalUrl(u"https://www.kde.org/"_s, u"Opened as received."_s);
+        window.setBrowsers(reportedEntries());
+        const QSize natural = window.preferredSize();
+        QCOMPARE(window.preferredSize(QSize(natural.width(), 2000)), natural);
+        const QSize narrower = window.preferredSize(QSize(natural.width() - 1, 2000));
+        QCOMPARE(narrower.width(), natural.width() - 1);
+        QVERIFY(narrower.height() > natural.height());
+
+        // Placed on screens exactly wide enough, and one pixel narrower.
+        for (const int extra : {0, -1}) {
+            const QRect screen(-1500, 120, natural.width() + 16 + extra, 900);
+            kbs::PlacementRequest request;
+            request.preferredSize = window.preferredSize(kbs::maximumSize(screen, 8));
+            request.screens = {{u"side"_s, screen, screen}};
+            const kbs::Placement placement = kbs::planPlacement(request);
+            QCOMPARE(placement.geometry.size(), extra == 0 ? natural : narrower);
+            QVERIFY(screen.adjusted(8, 8, -8, -8).contains(placement.geometry));
+        }
+
+        window.resize(natural);
+        window.show();
+        window.activateWindow();
+        QVERIFY(QTest::qWaitForWindowActive(&window));
+        auto *list = child<QListView>(&window, u"browserList"_s);
+        const int tileHeight = list->visualRect(list->model()->index(0, 0)).height();
+        QString problem = kbs::test::horizontalStripProblem(list);
+        QVERIFY2(problem.isEmpty(), qPrintable(problem));
+        QVERIFY(!list->horizontalScrollBar()->isVisible());
+        QCOMPARE(list->viewport()->height(), tileHeight);
+
+        window.resize(narrower);
+        QTRY_VERIFY(list->horizontalScrollBar()->isVisible());
+        problem = kbs::test::horizontalStripProblem(list);
+        QVERIFY2(problem.isEmpty(), qPrintable(problem));
+        QCOMPARE(list->horizontalScrollBar()->maximum(), 1);
+        QCOMPARE(list->viewport()->height(), tileHeight);
+        QSignalSpy chosen(&window, &ChooserWindow::browserChosen);
+        press(&window, Qt::Key_End);
+        QTRY_VERIFY(list->viewport()->rect().contains(list->visualRect(list->model()->index(5, 0))));
+        press(&window, Qt::Key_Return);
+        QTRY_COMPARE(chosen.size(), 1);
+        QCOMPARE(chosen.takeFirst().at(0).toString(), u"switchyard.desktop"_s);
+
+        // Wide enough again: no scroll bar is left behind.
+        window.resize(natural);
+        QTRY_VERIFY(!list->horizontalScrollBar()->isVisible());
+        problem = kbs::test::horizontalStripProblem(list);
+        QVERIFY2(problem.isEmpty(), qPrintable(problem));
+    }
+
+    void horizontalWidthFollowsTheBrowsersShown_data()
+    {
+        horizontalScrollsOnlyBeyondTheNaturalWidth_data();
+    }
+
+    // Shown, the window grows with every browser added (as after a rescan) and
+    // follows filtering, always without scrolling.
+    void horizontalWidthFollowsTheBrowsersShown()
+    {
+        QFETCH(QString, style);
+        if (!kbs::test::hasStyle(style)) {
+            QSKIP("style not installed");
+        }
+        kbs::test::ThemeScope theme(style);
+        Fixture f(1, false, horizontal(48, true));
+        const QSize maximum = screenMaximum(&f.window);
+        // The window is resized at once, the strip once its layout request is handled.
+        const auto check = [&f, &maximum](const QString &step) {
+            QTRY_COMPARE(f.window.size(), f.window.preferredSize(maximum));
+            QTRY_VERIFY2(kbs::test::horizontalStripProblem(f.list).isEmpty(),
+                         qPrintable(step + u": "_s + kbs::test::horizontalStripProblem(f.list)));
+        };
+        check(u"one"_s);
+        int previous = f.window.width();
+        for (int count = 2; count <= 6; ++count) {
+            f.window.setBrowsers(entries(count));
+            check(u"%1 browsers"_s.arg(count));
+            QVERIFY(f.window.width() >= previous);
+            if (count * f.rowRect(0).width() > ChooserWindow::CardWidth) {
+                QVERIFY2(f.window.width() > previous, qPrintable(u"%1 browsers"_s.arg(count)));
+            }
+            previous = f.window.width();
+        }
+
+        // Typing filters, and shows the filter field above the strip.
+        QTest::keyClicks(f.list, u"fi"_s);
+        auto *filter = child<QLineEdit>(&f.window, u"filterEdit"_s);
+        QVERIFY(filter->isVisible());
+        QCOMPARE(f.window.displayedBrowserIds(), QStringList{u"b1.desktop"_s});
+        check(u"filtered"_s);
+        QString why;
+        QVERIFY2(reachable(filter, &f.window, &why), qPrintable(why));
+        QVERIFY2(reachable(child<QWidget>(&f.window, u"cancelButton"_s), &f.window, &why), qPrintable(why));
+        QTest::keyClick(filter, Qt::Key_Escape);
+        QVERIFY(!filter->isVisible());
+        check(u"filter cleared"_s);
+        QCOMPARE(f.window.width(), previous);
+    }
+
+    void horizontalRefitsWhenItsLookChanges_data()
+    {
+        horizontalScrollsOnlyBeyondTheNaturalWidth_data();
+    }
+
+    // Preferences, the font and the widget style can change while the chooser
+    // is shown, or hidden for the settings; it is refitted every time.
+    void horizontalRefitsWhenItsLookChanges()
+    {
+        QFETCH(QString, style);
+        if (!kbs::test::hasStyle(style)) {
+            QSKIP("style not installed");
+        }
+        kbs::test::ThemeScope theme(style);
+        Fixture f(6);
+        const QSize maximum = screenMaximum(&f.window);
+        // The window is resized at once, the strip once its layout request is handled.
+        const auto check = [&f, &maximum](const QString &step) {
+            QTRY_COMPARE(f.window.size(), f.window.preferredSize(maximum));
+            QTRY_VERIFY2(kbs::test::horizontalStripProblem(f.list).isEmpty(),
+                         qPrintable(step + u": "_s + kbs::test::horizontalStripProblem(f.list)));
+        };
+        f.window.setPreferences(horizontal(48, true));
+        check(u"horizontal"_s);
+        const QSize named48 = f.rowRect(0).size();
+        f.window.setPreferences(horizontal(96, true));
+        check(u"96 px"_s);
+        QVERIFY(f.rowRect(0).height() > named48.height());
+        f.window.setPreferences(horizontal(96, false));
+        check(u"96 px without names"_s);
+        f.window.setPreferences(horizontal(48, true));
+        check(u"48 px again"_s);
+        QCOMPARE(f.rowRect(0).size(), named48);
+
+        const QFont original = f.window.font();
+        QFont larger = original;
+        larger.setPointSizeF(original.pointSizeF() * 1.5);
+        f.window.setFont(larger);
+        check(u"larger font"_s);
+        QVERIFY(f.rowRect(0).height() > named48.height());
+        f.window.setFont(original);
+        check(u"font restored"_s);
+        QCOMPARE(f.rowRect(0).size(), named48);
+
+        const QString other = style == u"Oxygen"_s ? u"Fusion"_s : u"Oxygen"_s;
+        if (kbs::test::hasStyle(other)) {
+            QApplication::setStyle(other);
+            check(u"switched to "_s + other);
+            QApplication::setStyle(style);
+            check(u"switched back"_s);
+        }
+
+        // Hidden for the settings, then shown with more browsers.
+        f.window.hide();
+        f.window.setBrowsers(entries(9));
+        f.window.refit();
+        f.window.show();
+        check(u"shown again"_s);
+
+        // The vertical list is unchanged.
+        f.window.setPreferences({});
+        QTRY_COMPARE(f.window.size(), f.window.preferredSize(maximum));
+        QCOMPARE(f.window.width(), ChooserWindow::CardWidth);
+        QCOMPARE(f.list->flow(), QListView::TopToBottom);
+        QCOMPARE(f.list->verticalScrollBarPolicy(), Qt::ScrollBarAsNeeded);
+        QCOMPARE(f.list->horizontalScrollBarPolicy(), Qt::ScrollBarAlwaysOff);
     }
 
     // Closing on focus loss
@@ -1437,10 +1748,13 @@ private Q_SLOTS:
     {
         QTest::addColumn<bool>("busy");
         QTest::addColumn<kbs::ChooserSettings>("preferences");
-        QTest::newRow("ready") << false << kbs::ChooserSettings();
-        QTest::newRow("busy, then ready") << true << kbs::ChooserSettings();
-        QTest::newRow("horizontal") << false << horizontal(64, true);
-        QTest::newRow("horizontal, busy, then ready") << true << horizontal(48, false);
+        QTest::addColumn<QString>("style");
+        QTest::newRow("ready") << false << kbs::ChooserSettings() << QString();
+        QTest::newRow("busy, then ready") << true << kbs::ChooserSettings() << QString();
+        QTest::newRow("horizontal") << false << horizontal(64, true) << QString();
+        QTest::newRow("horizontal, busy, then ready") << true << horizontal(48, false) << QString();
+        QTest::newRow("horizontal, reported six") << false << horizontal(48, true) << u"Breeze"_s;
+        QTest::newRow("horizontal, reported six, Oxygen") << false << horizontal(48, true) << u"Oxygen"_s;
     }
 
     // Wayland only: QT_QPA_PLATFORM=wayland ./test_chooser waylandLayerShellPopup
@@ -1454,6 +1768,14 @@ private Q_SLOTS:
 #else
         QFETCH(bool, busy);
         QFETCH(kbs::ChooserSettings, preferences);
+        QFETCH(QString, style);
+        if (!style.isEmpty() && !kbs::test::hasStyle(style)) {
+            QSKIP("style not installed");
+        }
+        std::optional<kbs::test::ThemeScope> theme;
+        if (!style.isEmpty()) {
+            theme.emplace(style);
+        }
         ChooserWindow window;
         window.setPreferences(preferences);
         window.setOriginalUrl(Url);
@@ -1462,7 +1784,7 @@ private Q_SLOTS:
         } else {
             window.setFinalUrl(Url, u"Opened as received."_s);
         }
-        window.setBrowsers(entries(5));
+        window.setBrowsers(style.isEmpty() ? entries(5) : reportedEntries());
         const kbs::PopupPlacement placed = kbs::placePopup(&window, [&window](const QSize &maximum) {
             return window.preferredSize(maximum);
         });
@@ -1503,11 +1825,21 @@ private Q_SLOTS:
         }
         QTRY_COMPARE(QApplication::focusWidget(), list);
 
+        if (preferences.style == kbs::ChooserStyle::Horizontal) {
+            // The private KWin's output is wide enough for the whole row.
+            QTRY_COMPARE(window.size(), window.preferredSize(screenMaximum(&window)));
+            QVERIFY(window.width() < screenMaximum(&window).width());
+            const QString problem = kbs::test::horizontalStripProblem(list);
+            QVERIFY2(problem.isEmpty(), qPrintable(problem));
+            QVERIFY(!list->horizontalScrollBar()->isVisible());
+        }
+
         QSignalSpy chosen(&window, &ChooserWindow::browserChosen);
         press(&window, Qt::Key_2);
         // With accessibility active, the AT-SPI bridge delivers key events asynchronously.
         QTRY_COMPARE(chosen.size(), 1);
-        QCOMPARE(chosen.takeFirst().at(0).toString(), u"b2.desktop"_s);
+        const QString second = style.isEmpty() ? u"b2.desktop"_s : u"chromium.desktop"_s;
+        QCOMPARE(chosen.takeFirst().at(0).toString(), second);
         if (preferences.style == kbs::ChooserStyle::Horizontal) {
             QCOMPARE(list->flow(), QListView::LeftToRight);
             press(&window, Qt::Key_Right);
@@ -1515,7 +1847,7 @@ private Q_SLOTS:
             press(&window, Qt::Key_Left);
             press(&window, Qt::Key_Return);
             QTRY_COMPARE(chosen.size(), 1);
-            QCOMPARE(chosen.takeFirst().at(0).toString(), u"b2.desktop"_s);
+            QCOMPARE(chosen.takeFirst().at(0).toString(), second);
         }
         kbs::test::saveScreenshot(&window, u"chooser-wayland-layershell-%1"_s.arg(QString::fromLatin1(QTest::currentDataTag()).replace(u", "_s, u"-"_s).replace(u' ', u'-')));
 #endif

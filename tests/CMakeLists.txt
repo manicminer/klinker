@@ -59,4 +59,9 @@ if(KBS_WAYLAND_TESTS)
         COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/wayland-smoke.sh $<TARGET_FILE:test_chooser>
             waylandLayerShellPopup waylandFocusLoss waylandOwnPopupKeepsTheChooser)
     set_tests_properties(wayland_smoke PROPERTIES SKIP_RETURN_CODE 77)
+    # The chooser as the application shows it, sized for the virtual output.
+    add_test(NAME wayland_smoke_controller
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/wayland-smoke.sh $<TARGET_FILE:test_application>
+            horizontalChooserFitsItsBrowsers)
+    set_tests_properties(wayland_smoke_controller PROPERTIES SKIP_RETURN_CODE 77)
 endif()

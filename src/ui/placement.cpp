@@ -154,7 +154,10 @@ PopupPlacement placePopup(QWidget *window, const PreferredSizeFunction &preferre
 
     PopupPlacement result{planPlacement(request), false};
     if (!result.placement.isValid()) {
-        window->resize(request.preferredSize);
+        // Screens without names cannot be planned for: sized for the window's own.
+        const QScreen *own = window->screen();
+        const QSize maximum = own ? maximumSize(own->availableGeometry(), request.margin) : QSize();
+        window->resize(maximum.isValid() ? preferredSize(maximum).boundedTo(maximum) : request.preferredSize);
         return result;
     }
     if (result.placement.geometry.size() != request.preferredSize) {

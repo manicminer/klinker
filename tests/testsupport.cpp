@@ -4,11 +4,14 @@
 #include <KIconTheme>
 #include <KSharedConfig>
 
+#include <QAbstractItemView>
 #include <QApplication>
 #include <QDir>
 #include <QFile>
 #include <QIcon>
 #include <QImage>
+#include <QScrollBar>
+#include <QStyle>
 #include <QStandardPaths>
 #include <QStyleFactory>
 #include <QTemporaryDir>
@@ -87,9 +90,16 @@ QPalette breezeDarkPalette()
                        "#a1a9b1");
 }
 
-void applyTheme(bool dark)
+bool hasStyle(const QString &style)
 {
-    if (QStyleFactory::keys().contains(u"Breeze"_s, Qt::CaseInsensitive)) {
+    return QStyleFactory::keys().contains(style, Qt::CaseInsensitive);
+}
+
+void applyTheme(bool dark, const QString &style)
+{
+    if (!style.isEmpty()) {
+        QApplication::setStyle(style);
+    } else if (hasStyle(u"Breeze"_s)) {
         QApplication::setStyle(u"Breeze"_s);
     } else {
         QApplication::setStyle(u"Fusion"_s);
@@ -108,6 +118,70 @@ void applyTheme(bool dark)
     } else {
         QApplication::setPalette(dark ? breezeDarkPalette() : breezeLightPalette());
     }
+}
+
+QString horizontalStripProblem(const QAbstractItemView *list)
+{
+    QStringList problems;
+    const QScrollBar *vertical = list->verticalScrollBar();
+    const QScrollBar *horizontal = list->horizontalScrollBar();
+    if (list->verticalScrollBarPolicy() != Qt::ScrollBarAlwaysOff) {
+        problems.append(u"the vertical scroll bar is not always off"_s);
+    }
+    if (vertical->isVisible() || vertical->maximum() != 0) {
+        problems.append(u"vertical scroll bar shown %1 with range %2"_s.arg(vertical->isVisible()).arg(vertical->maximum()));
+    }
+    const int rows = list->model() ? list->model()->rowCount() : 0;
+    if (rows == 0) {
+        problems.append(u"no tiles"_s);
+        return problems.join(u"; "_s);
+    }
+    const QRect viewport = list->viewport()->rect();
+    const QRect first = list->visualRect(list->model()->index(0, 0));
+    const QRect last = list->visualRect(list->model()->index(rows - 1, 0));
+    const int rowWidth = last.right() - first.left() + 1;
+    if (rowWidth != rows * first.width() || last.top() != first.top()) {
+        problems.append(u"tiles are not one row: first %1,%2 last %3,%4"_s.arg(first.left()).arg(first.top()).arg(last.left()).arg(last.top()));
+    }
+    for (int row = 0; row < rows; ++row) {
+        const QRect tile = list->visualRect(list->model()->index(row, 0));
+        if (tile.top() < viewport.top() || tile.bottom() > viewport.bottom()) {
+            problems.append(u"tile %1 (y %2 to %3) is cut off by the %4 px high viewport"_s.arg(row).arg(tile.top()).arg(tile.bottom()).arg(viewport.height()));
+            break;
+        }
+    }
+    if (rowWidth <= viewport.width()) {
+        if (horizontal->isVisible() || horizontal->maximum() != 0) {
+            problems.append(u"a %1 px row fits the %2 px viewport but the horizontal scroll bar is shown %3 with range %4"_s.arg(rowWidth)
+                                .arg(viewport.width())
+                                .arg(horizontal->isVisible())
+                                .arg(horizontal->maximum()));
+        }
+        if (!viewport.contains(first) || !viewport.contains(last)) {
+            problems.append(u"the first or last tile is outside the viewport"_s);
+        }
+    } else {
+        if (!horizontal->isVisible() || horizontal->maximum() != rowWidth - viewport.width()) {
+            problems.append(u"a %1 px row in a %2 px viewport needs a horizontal scroll bar, shown %3 with range %4"_s.arg(rowWidth)
+                                .arg(viewport.width())
+                                .arg(horizontal->isVisible())
+                                .arg(horizontal->maximum()));
+        }
+    }
+    const QRect viewportRect = list->viewport()->geometry();
+    if (!list->rect().contains(viewportRect)) {
+        problems.append(u"the viewport is outside the list"_s);
+    }
+    if (horizontal->isVisible()) {
+        const QRect bar(horizontal->mapTo(list, QPoint()), horizontal->size());
+        if (!list->rect().contains(bar)) {
+            problems.append(u"the horizontal scroll bar is outside the list"_s);
+        }
+        if (bar.intersects(viewportRect) && !list->style()->styleHint(QStyle::SH_ScrollBar_Transient, nullptr, horizontal)) {
+            problems.append(u"the horizontal scroll bar covers the tiles"_s);
+        }
+    }
+    return problems.join(u"; "_s);
 }
 
 QString saveScreenshot(QWidget *widget, const QString &name)

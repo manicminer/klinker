@@ -25,6 +25,7 @@
 #include <QProcess>
 #include <QPushButton>
 #include <QScopeGuard>
+#include <QScrollBar>
 #include <QSignalSpy>
 #include <QStandardPaths>
 #include <QTcpServer>
@@ -1103,8 +1104,68 @@ private Q_SLOTS:
         QCOMPARE(launched.first().at(0).toString(), u"b"_s);
     }
 
+    void horizontalChooserFitsItsBrowsers_data()
+    {
+        QTest::addColumn<QString>("style");
+        for (const QString &style : {u"Breeze"_s, u"Oxygen"_s, u"Fusion"_s}) {
+            QTest::newRow(qPrintable(style)) << style;
+        }
+    }
+
+    // As reported: six named browsers in a horizontal chooser with 48 px icons
+    // on a screen wide enough for them. The window is as wide as the row, and
+    // nothing scrolls or is cut off, whatever the widget style.
+    void horizontalChooserFitsItsBrowsers()
+    {
+        QFETCH(QString, style);
+        if (!kbs::test::hasStyle(style)) {
+            QSKIP("style not installed");
+        }
+        kbs::test::ThemeScope theme(style, true);
+        Sandbox box;
+        Config config;
+        for (const QString &name : {u"ChatGPT"_s, u"Chromium"_s, u"Falkon"_s, u"Firefox"_s, u"LibreWolf"_s, u"Switchyard"_s}) {
+            config.browsers.append(box.capture(name.toLower(), name));
+        }
+        config.chooser = {kbs::ChooserStyle::Horizontal, 48, true, true};
+        box.writeConfig(config);
+        Application app(box.options(true));
+        QSignalSpy finished(&app, &Application::finished);
+        app.openUrls({u"https://www.kde.org/"_s});
+        QTRY_VERIFY(app.chooser() && app.chooser()->isVisible());
+        ChooserWindow *chooser = app.chooser();
+        QListView *list = chooserList(app);
+        kbs::test::saveScreenshot(chooser, u"controller-horizontal-reported-six-%1"_s.arg(style.toLower()));
+        const QSize maximum = kbs::maximumSize(chooser->screen()->availableGeometry(), 8);
+        QCOMPARE(chooser->size(), chooser->preferredSize(maximum));
+        QVERIFY(chooser->width() < maximum.width());
+        const QString problem = kbs::test::horizontalStripProblem(list);
+        QVERIFY2(problem.isEmpty(), qPrintable(problem));
+        const QRect tile = list->visualRect(list->model()->index(0, 0));
+        QCOMPARE(list->width(), 6 * tile.width() + 2 * list->frameWidth());
+        QCOMPARE(list->viewport()->size(), QSize(6 * tile.width(), tile.height()));
+        QVERIFY(tile.height() >= 48 + list->fontMetrics().height());
+
+        QTest::keyClick(list, Qt::Key_Escape);
+        QTRY_COMPARE(finished.size(), 1);
+        QVERIFY(box.captures().isEmpty());
+    }
+
+    void savedAppearanceAppliesWhenTheChooserReturns_data()
+    {
+        QTest::addColumn<QString>("widgetStyle");
+        for (const QString &style : {u"Breeze"_s, u"Oxygen"_s}) {
+            QTest::newRow(qPrintable(style)) << style;
+        }
+    }
+
     void savedAppearanceAppliesWhenTheChooserReturns()
     {
+        QFETCH(QString, widgetStyle);
+        if (!kbs::test::hasStyle(widgetStyle)) {
+            QSKIP("style not installed");
+        }
+        kbs::test::ThemeScope theme(widgetStyle);
         Sandbox box;
         Config config;
         config.browsers = {box.capture(u"a"_s, u"Alpha"_s), box.capture(u"b"_s, u"Beta"_s), box.capture(u"c"_s, u"Gamma"_s)};
@@ -1131,6 +1192,9 @@ private Q_SLOTS:
         QCOMPARE(chooser->screen(), screen);
         QCOMPARE(chooser->size(), chooser->preferredSize(kbs::maximumSize(screen->availableGeometry(), 8)));
         QVERIFY(screen->availableGeometry().adjusted(8, 8, -8, -8).contains(chooser->geometry()));
+        const QString problem = kbs::test::horizontalStripProblem(chooserList(app));
+        QVERIFY2(problem.isEmpty(), qPrintable(problem));
+        QVERIFY(!chooserList(app)->horizontalScrollBar()->isVisible());
         QSignalSpy launched(&app, &Application::launched);
         QTest::keyClick(chooserList(app), Qt::Key_3);
         QTRY_COMPARE(launched.size(), 1);

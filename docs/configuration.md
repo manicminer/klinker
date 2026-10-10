@@ -189,7 +189,7 @@ Browser Switcher) gets the vertical list.
 
 | Key                | Type    | Default      | Meaning |
 |--------------------|---------|--------------|---------|
-| `style`            | string  | `"vertical"` | `"vertical"`: a list with each browser's name and command. `"horizontal"`: a strip of icons side by side that scrolls when they do not fit. |
+| `style`            | string  | `"vertical"` | `"vertical"`: a list with each browser's name and command. `"horizontal"`: a strip of icons side by side that scrolls sideways only when they do not fit on the screen. |
 | `iconSize`         | integer | `48`         | Icon size of the horizontal strip in logical pixels, from 24 to 128. |
 | `showBrowserNames` | boolean | `true`       | Horizontal only: show each name under its icon. Names are always in the tooltip and for screen readers. |
 | `closeOnFocusLoss` | boolean | `false`      | Cancel the link, as Esc does, when another application takes the focus from the chooser. |

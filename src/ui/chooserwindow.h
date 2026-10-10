@@ -90,11 +90,16 @@ public:
     ChooserSettings preferences() const;
 
     // Vertical: width CardWidth and the height needed for up to MaxShownRows
-    // rows. Horizontal: wide enough for every icon, up to `maximum`, with room
-    // for a scroll bar when they do not fit. A smaller window still works: the
-    // browser list and the link details and messages above it scroll separately.
-    QSize preferredSize() const;
-    QSize preferredSize(const QSize &maximum) const;
+    // rows. Horizontal: wide enough for the whole row of tiles, up to
+    // `maximum`, with room for a horizontal scroll bar when they do not fit.
+    // The strip never scrolls vertically: when `maximum` is too low for a whole
+    // row, the icons are shown smaller (see shownIconSize()); the preference
+    // is kept. A smaller window still works: the link details and messages
+    // above the browsers scroll separately.
+    QSize preferredSize();
+    QSize preferredSize(const QSize &maximum);
+    // Horizontal: the icon size shown since the last preferredSize().
+    int shownIconSize() const;
 
     // Resizes the window to its preferred size within its current screen and
     // moves it fully onto that screen (see fitToArea()). Never changes the
@@ -122,6 +127,7 @@ Q_SIGNALS:
 
 protected:
     bool event(QEvent *event) override;
+    void changeEvent(QEvent *event) override;
     void paintEvent(QPaintEvent *event) override;
     void showEvent(QShowEvent *event) override;
     void hideEvent(QHideEvent *event) override;
@@ -134,6 +140,7 @@ private:
     void chooseRow(int row);
     void updateState();
     void setFilterText(const QString &text);
+    void closeFilter();
     void setCurrentRow(int row);
     void focusList();
     void restoreListFocus();
@@ -143,6 +150,9 @@ private:
     void checkFocusLoss(quint64 activation);
     void resolveFocusLoss();
     void updateSize();
+    int iconSizeFor(const QSize &maximum);
+    void setShownIconSize(int size);
+    QSize sizeFor(const QSize &maximum) const;
 
     BrowserListModel *m_model;
     BrowserFilterModel *m_filter;

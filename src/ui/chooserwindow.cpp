@@ -28,6 +28,7 @@
 #include <QScrollBar>
 #include <QShowEvent>
 #include <QStyle>
+#include <QStyleOption>
 #include <QStyledItemDelegate>
 #include <QTimer>
 #include <QToolButton>
@@ -83,6 +84,9 @@ public:
     using QStyledItemDelegate::QStyledItemDelegate;
 
     ChooserSettings preferences;
+    // Horizontal: the icon size shown, which is smaller than the preference
+    // only when the screen is too low for it (see ChooserWindow::preferredSize()).
+    int iconSize = ChooserSettings::DefaultIconSize;
 
     bool horizontal() const
     {
@@ -93,7 +97,7 @@ public:
     // centred name of about NameChars characters below it.
     QSize tileSize(const QFont &font) const
     {
-        const int icon = preferences.iconSize;
+        const int icon = iconSize;
         if (!preferences.showBrowserNames) {
             return {icon + 2 * TilePadding + TileGap, icon + 2 * TilePadding + TileGap};
         }
@@ -213,7 +217,7 @@ private:
             painter->drawRoundedRect(QRectF(tile).adjusted(0.5, 0.5, -0.5, -0.5), RowRadius, RowRadius);
         }
 
-        const int size = preferences.iconSize;
+        const int size = iconSize;
         const QRect content = tile.adjusted(TilePadding, TilePadding, -TilePadding, -TilePadding);
         const QRect iconRect(content.center().x() - size / 2 + 1, content.top(), size, size);
         const QIcon icon = index.data(Qt::DecorationRole).value<QIcon>();
@@ -252,7 +256,8 @@ private:
 
 // Vertically, asks for exactly as many rows as the chooser wants to show at
 // once. Horizontally, asks for the width of every tile and the height of one,
-// plus a scroll bar when the width it gets is too small for all of them.
+// plus the horizontal scroll bar when the width it gets is too small for all
+// of them. It never scrolls vertically then: it is always as high as a tile.
 class BrowserListView : public QListView
 {
 public:
@@ -280,6 +285,16 @@ public:
         return std::max(1, model() ? model()->rowCount() : 0) * tileSize().width();
     }
 
+    // Lays the items out again after their size changed.
+    void relayout()
+    {
+        // Item sizes are cached with uniform item sizes.
+        setUniformItemSizes(false);
+        setUniformItemSizes(true);
+        doItemsLayout();
+        updateGeometry();
+    }
+
     QSize sizeHint() const override
     {
         if (horizontal()) {
@@ -290,13 +305,12 @@ public:
         return {ChooserWindow::CardWidth, std::max(1, rows) * rowHeight + 2 * frameWidth()};
     }
 
-    // Horizontally, one tile, or less (scrolling vertically too) rather than
-    // pushing the rest of a tiny window off the screen.
+    // Horizontally, one whole tile, scrolling to the others.
     QSize minimumSizeHint() const override
     {
         if (horizontal()) {
-            const QSize tile = tileSize();
-            return {tile.width() + 2 * frameWidth(), std::min(tile.height(), 48) + scrollBarExtent() + 2 * frameWidth()};
+            const int width = tileSize().width() + 2 * frameWidth();
+            return {width, heightForWidth(width)};
         }
         return {100, std::max(sizeHintForRow(0), 40) + 2 * frameWidth()};
     }
@@ -330,7 +344,7 @@ public:
             return QListView::heightForWidth(width);
         }
         const bool scrolls = stripWidth() > width - 2 * frameWidth();
-        return tileSize().height() + (scrolls ? scrollBarExtent() : 0) + 2 * frameWidth();
+        return tileSize().height() + (scrolls ? scrollBarHeight() : 0) + 2 * frameWidth();
     }
 
 protected:
@@ -343,10 +357,28 @@ protected:
         }
     }
 
-private:
-    int scrollBarExtent() const
+    void changeEvent(QEvent *event) override
     {
-        return style()->pixelMetric(QStyle::PM_ScrollBarExtent, nullptr, horizontalScrollBar());
+        QListView::changeEvent(event);
+        // Tile sizes follow the font, and the scroll bar the style.
+        if (event->type() == QEvent::FontChange || event->type() == QEvent::StyleChange) {
+            relayout();
+        }
+    }
+
+private:
+    // The height the horizontal scroll bar takes from the viewport, as
+    // QAbstractScrollArea lays it out: the bar's size hint, plus the style's
+    // spacing where it draws the frame around the viewport only.
+    int scrollBarHeight() const
+    {
+        int height = horizontalScrollBar()->sizeHint().height();
+        QStyleOption option;
+        option.initFrom(this);
+        if (frameStyle() != QFrame::NoFrame && style()->styleHint(QStyle::SH_ScrollView_FrameOnlyAroundContents, &option, this)) {
+            height += style()->pixelMetric(QStyle::PM_ScrollView_ScrollBarSpacing, &option, this);
+        }
+        return height;
     }
 
     BrowserDelegate *m_delegate;
@@ -868,13 +900,16 @@ void ChooserWindow::setPreferences(const ChooserSettings &preferences)
         scheduleFocusLossCheck();
     }
     m_delegate->preferences = preferences;
+    m_delegate->iconSize = preferences.iconSize;
     const bool horizontal = preferences.style == ChooserStyle::Horizontal;
     // The same list and model either way, so choosing works the same.
     m_list->setFlow(horizontal ? QListView::LeftToRight : QListView::TopToBottom);
     m_list->setWrapping(false);
+    // The strip is always as high as its tiles, and only scrolls sideways.
+    // Were both scroll bars possible, each could take the room the other
+    // needs, and both would stay even when everything fits.
     m_list->setHorizontalScrollBarPolicy(horizontal ? Qt::ScrollBarAsNeeded : Qt::ScrollBarAlwaysOff);
-    // Horizontally only needed when the window is too low for a whole tile.
-    m_list->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    m_list->setVerticalScrollBarPolicy(horizontal ? Qt::ScrollBarAlwaysOff : Qt::ScrollBarAsNeeded);
     // Horizontally its height follows the width (see heightForWidth()); any
     // extra height goes to the content area.
     QSizePolicy policy(horizontal ? QSizePolicy::Preferred : QSizePolicy::Expanding, horizontal ? QSizePolicy::Preferred : QSizePolicy::Expanding);
@@ -887,11 +922,7 @@ void ChooserWindow::setPreferences(const ChooserSettings &preferences)
     // Breeze fills the area behind scroll bars in the viewport's colour; the
     // strip's scroll bar sits on the card (the viewport itself is not filled).
     m_list->viewport()->setBackgroundRole(horizontal ? QPalette::Window : QPalette::Base);
-    // Tile sizes are cached with uniform item sizes.
-    m_list->setUniformItemSizes(false);
-    m_list->setUniformItemSizes(true);
-    m_list->doItemsLayout();
-    m_list->updateGeometry();
+    m_list->relayout();
     if (m_list->currentIndex().isValid()) {
         m_list->scrollTo(m_list->currentIndex());
     }
@@ -903,12 +934,72 @@ ChooserSettings ChooserWindow::preferences() const
     return m_preferences;
 }
 
-QSize ChooserWindow::preferredSize() const
+QSize ChooserWindow::preferredSize()
 {
     return preferredSize(QSize());
 }
 
-QSize ChooserWindow::preferredSize(const QSize &maximum) const
+QSize ChooserWindow::preferredSize(const QSize &maximum)
+{
+    if (m_preferences.style == ChooserStyle::Horizontal) {
+        setShownIconSize(iconSizeFor(maximum));
+    }
+    return sizeFor(maximum);
+}
+
+// The largest icon size, up to the preference, for which a whole row of tiles
+// and the rest of the card fit into the height of `maximum`. Below
+// ChooserSettings::MinIconSize the window may be cut off by the screen instead.
+int ChooserWindow::iconSizeFor(const QSize &maximum)
+{
+    const int preferred = m_preferences.iconSize;
+    if (!maximum.isValid()) {
+        return preferred;
+    }
+    const int shown = m_delegate->iconSize;
+    const auto fits = [this, &maximum](int size) {
+        m_delegate->iconSize = size;
+        const int width = sizeFor(maximum).width();
+        return std::max(m_root->totalMinimumHeightForWidth(width), minimumHeight()) <= maximum.height();
+    };
+    int size = preferred;
+    if (!fits(preferred)) {
+        // The height needed grows with the icon size.
+        size = std::min(int(ChooserSettings::MinIconSize), preferred);
+        int low = size + 1;
+        int high = preferred - 1;
+        while (low <= high) {
+            const int middle = (low + high) / 2;
+            if (fits(middle)) {
+                size = middle;
+                low = middle + 1;
+            } else {
+                high = middle - 1;
+            }
+        }
+    }
+    m_delegate->iconSize = shown;
+    return size;
+}
+
+void ChooserWindow::setShownIconSize(int size)
+{
+    if (m_delegate->iconSize == size) {
+        return;
+    }
+    m_delegate->iconSize = size;
+    m_list->relayout();
+    if (m_list->currentIndex().isValid()) {
+        m_list->scrollTo(m_list->currentIndex());
+    }
+}
+
+int ChooserWindow::shownIconSize() const
+{
+    return m_delegate->iconSize;
+}
+
+QSize ChooserWindow::sizeFor(const QSize &maximum) const
 {
     // The content's own layout request may still be queued.
     m_content->updateGeometry();
@@ -1054,6 +1145,16 @@ void ChooserWindow::hideEvent(QHideEvent *event)
     }
 }
 
+// Tiles and controls follow the font and the style.
+void ChooserWindow::changeEvent(QEvent *event)
+{
+    QWidget::changeEvent(event);
+    if (event->type() == QEvent::FontChange || event->type() == QEvent::StyleChange) {
+        // Once the children have seen the change too.
+        QTimer::singleShot(0, this, &ChooserWindow::updateSize);
+    }
+}
+
 void ChooserWindow::keyPressEvent(QKeyEvent *event)
 {
     if (event->key() == Qt::Key_Escape) {
@@ -1096,8 +1197,7 @@ bool ChooserWindow::eventFilter(QObject *watched, QEvent *event)
         switch (key->key()) {
         case Qt::Key_Escape:
             if (m_filterEdit->isVisible()) {
-                m_filterEdit->clear();
-                m_filterEdit->hide();
+                closeFilter();
             } else {
                 emitCancelled();
             }
@@ -1128,8 +1228,7 @@ bool ChooserWindow::eventFilter(QObject *watched, QEvent *event)
     if (watched == m_filterEdit) {
         switch (key->key()) {
         case Qt::Key_Escape:
-            m_filterEdit->clear();
-            m_filterEdit->hide();
+            closeFilter();
             focusList();
             return true;
         case Qt::Key_Down:
@@ -1198,6 +1297,19 @@ void ChooserWindow::setFilterText(const QString &text)
 {
     m_filter->setFilterFixedString(text);
     setCurrentRow(0);
+    // The strip is as wide as the browsers shown.
+    if (m_preferences.style == ChooserStyle::Horizontal) {
+        updateSize();
+    }
+}
+
+void ChooserWindow::closeFilter()
+{
+    m_filterEdit->clear();
+    m_filterEdit->hide();
+    if (m_preferences.style == ChooserStyle::Horizontal) {
+        updateSize();
+    }
 }
 
 void ChooserWindow::setCurrentRow(int row)

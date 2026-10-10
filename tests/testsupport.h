@@ -5,6 +5,7 @@
 #include <QString>
 #include <QStringList>
 
+class QAbstractItemView;
 class QWidget;
 
 namespace kbs::test
@@ -22,7 +23,34 @@ QPalette breezeDarkPalette();
 
 // Applies Breeze Light or Breeze Dark (colour scheme and palette, and the
 // Breeze widget style when installed), independent of the desktop's settings.
-void applyTheme(bool dark);
+// With a style name, that widget style is used instead (see hasStyle()).
+void applyTheme(bool dark, const QString &style = QString());
+
+// Whether a widget style of this name is installed.
+bool hasStyle(const QString &style);
+
+// Applies a widget style (see applyTheme()) until destroyed, then the default
+// light theme again.
+class ThemeScope
+{
+public:
+    explicit ThemeScope(const QString &style, bool dark = false)
+    {
+        applyTheme(dark, style);
+    }
+    ~ThemeScope()
+    {
+        applyTheme(false);
+    }
+    ThemeScope(const ThemeScope &) = delete;
+    ThemeScope &operator=(const ThemeScope &) = delete;
+};
+
+// What is wrong with the horizontal browser strip, or an empty string: it never
+// scrolls vertically, every tile is shown at its full height, and it scrolls
+// horizontally exactly when the row of tiles is wider than its viewport, with
+// the scroll bar below the viewport rather than over the tiles.
+QString horizontalStripProblem(const QAbstractItemView *list);
 
 // Saves widget->grab() as <KBS_SCREENSHOT_DIR>/<name>.png when the variable
 // is set; returns the file name or an empty string.
