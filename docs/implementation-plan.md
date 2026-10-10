@@ -1,5 +1,10 @@
 # kde-browser-switcher — implementation plan
 
+> Historical: written when the application was called kde-browser-switcher.
+> It is now Klinker (`klinker`, `io.github.manicminer.Klinker`); its
+> configuration moved to `$XDG_CONFIG_HOME/klinker/config.json`, reading the
+> old file until the first save (see [configuration.md](configuration.md)).
+
 A native KDE Plasma URL handler: when a link is opened, either route it to a
 browser by rule or show a chooser. Inspired in functionality (not code or
 assets) by Switchyard.

@@ -1,12 +1,14 @@
-# KDE Browser Switcher
+# Klinker
 
 A native KDE Plasma link handler. Set it as your default web browser and every
 link you open either goes straight to the browser chosen by your routing
 rules, or shows a small chooser:
 
-- a borderless, palette-themed card listing your browsers with their icons;
-  number keys 1–9 open the browser at that position, arrows and Enter work,
-  typing filters the list, Esc cancels;
+- a borderless, palette-themed card with your browsers, either as a list with
+  their names and commands or as a horizontal strip of icons (size and names
+  configurable); number keys 1–9 open the browser at that position, arrows
+  and Enter work, typing filters the browsers, Esc cancels, and optionally
+  switching to another application cancels too;
 - the link that will be opened (plain text, elided, with a copy button) and,
   under *Details*, the link as received and what preprocessing did;
 - settings for browsers (detected automatically, plus your own), routing rules
@@ -20,7 +22,7 @@ assets are shared.
 
 ## Building
 
-Browser Switcher targets KDE Plasma 6. It has been built and tested on Arch
+Klinker targets KDE Plasma 6. It has been built and tested on Arch
 Linux only, with these packages:
 
     sudo pacman -S --needed cmake ninja gcc qt6-base qt6-svg kconfig kwidgetsaddons kiconthemes layer-shell-qt desktop-file-utils
@@ -47,56 +49,83 @@ Nothing is installed or changed until you run these commands yourself.
 
 This installs:
 
-- `~/.local/bin/kde-browser-switcher`
-- `~/.local/share/applications/io.github.manicminer.KdeBrowserSwitcher.desktop`
-- `~/.local/share/icons/hicolor/scalable/apps/io.github.manicminer.KdeBrowserSwitcher.svg`
+- `~/.local/bin/klinker`
+- `~/.local/share/applications/io.github.manicminer.Klinker.desktop`
+- `~/.local/share/icons/hicolor/scalable/apps/io.github.manicminer.Klinker.svg`
 
 To see what would be installed without installing anything, stage it inside
 the build directory instead:
 
     DESTDIR="$PWD/build/stage" cmake --install build
 
-The desktop file runs `kde-browser-switcher` from `PATH` (and uses `TryExec`,
+The desktop file runs `klinker` from `PATH` (and uses `TryExec`,
 so Plasma hides the entry if it cannot find the program). Check with
-`command -v kde-browser-switcher`; if it prints nothing, add `~/.local/bin` to
+`command -v klinker`; if it prints nothing, add `~/.local/bin` to
 the `PATH` of your Plasma session, for example with a script in
 `~/.config/plasma-workspace/env/` containing `export PATH="$HOME/.local/bin:$PATH"`,
 then log out and back in.
 
 To try it without making it the default:
 
-    kde-browser-switcher https://kde.org/
+    klinker https://kde.org/
 
 ### Making it the default browser
 
 *System Settings → Default Applications → Web browser*, then pick
-**Browser Switcher**. Switch back the same way.
+**Klinker**. Switch back the same way.
 
 Alternatively, from a terminal, note your current default first so you can
 restore it:
 
     xdg-settings get default-web-browser
 
-    xdg-settings set default-web-browser io.github.manicminer.KdeBrowserSwitcher.desktop
+    xdg-settings set default-web-browser io.github.manicminer.Klinker.desktop
 
 To restore, run `xdg-settings set default-web-browser` with the name the first
 command printed (for example `firefox.desktop`). Before switching, open
-Browser Switcher once with `kde-browser-switcher --settings` and check that
-your browsers are listed.
+Klinker once with `klinker --settings` and check that your browsers are
+listed.
+
+### Upgrading from Browser Switcher
+
+Klinker was called Browser Switcher before (`kde-browser-switcher`,
+`io.github.manicminer.KdeBrowserSwitcher`). Because the names changed,
+installing Klinker adds new files next to the old ones and changes nothing
+else: an installed Browser Switcher keeps working, and stays your default
+browser until you choose otherwise.
+
+1. Install Klinker as above. Klinker never lists or starts the old version.
+   The old version does not know the new name, so its chooser lists Klinker
+   as a browser; choosing it there just hands the link to Klinker.
+2. Your settings come along: until Klinker saves its own
+   `~/.config/klinker/config.json`, it reads
+   `~/.config/kde-browser-switcher/config.json`. The first *Apply* or *OK* in
+   Klinker's settings copies them to the new file; the old file is left as it
+   is. See [docs/configuration.md](docs/configuration.md#settings-from-browser-switcher).
+3. If `xdg-settings get default-web-browser` prints
+   `io.github.manicminer.KdeBrowserSwitcher.desktop`, make Klinker the
+   default as described above.
+4. Once Klinker works for you, remove the old version yourself, nothing does
+   it for you: run `xargs rm -v < install_manifest.txt` in its old build
+   directory, or delete `~/.local/bin/kde-browser-switcher`,
+   `~/.local/share/applications/io.github.manicminer.KdeBrowserSwitcher.desktop`
+   and `~/.local/share/icons/hicolor/scalable/apps/io.github.manicminer.KdeBrowserSwitcher.svg`.
+   Delete `~/.config/kde-browser-switcher/` as well when you no longer need
+   the old settings.
 
 ### Uninstalling
 
     xargs rm -v < build/install_manifest.txt
 
-Your settings in `~/.config/kde-browser-switcher/` are left alone; delete the
-directory as well to remove them.
+Your settings in `~/.config/klinker/` are left alone; delete the directory as
+well to remove them.
 
 ## Usage
 
-    kde-browser-switcher                  # settings
-    kde-browser-switcher URL...           # route or choose, one link after another
-    kde-browser-switcher --choose URL     # always show the chooser
-    kde-browser-switcher --config FILE    # use another configuration file
+    klinker                  # settings
+    klinker URL...           # route or choose, one link after another
+    klinker --choose URL     # always show the chooser
+    klinker --config FILE    # use another configuration file
 
 Accepted links are `http`, `https` and `file` URLs, and paths of existing
 files. Anything else (`javascript:`, `data:`, links with spaces or control
@@ -105,12 +134,17 @@ characters, ...) is refused with a message and exit status 2. More in
 
 ## Configuration
 
-Settings live in `~/.config/kde-browser-switcher/config.json` (or under
+Settings live in `~/.config/klinker/config.json` (or under
 `$XDG_CONFIG_HOME`), a versioned, human-readable JSON file documented in
 [docs/configuration.md](docs/configuration.md). The settings window edits the
 same file. Opening links never writes it; only *Apply* or *OK* in the settings
 does, atomically, and only if nobody else changed the file since it was
-loaded.
+loaded. While it does not exist, the settings of Browser Switcher are read
+instead (see [Upgrading from Browser Switcher](#upgrading-from-browser-switcher)).
+
+*Appearance* in the settings chooses between the vertical list (the default)
+and the horizontal strip of icons, its icon size and names, and whether the
+chooser closes when it loses the focus.
 
 Routing rules are checked from the top; the first enabled rule that matches
 opens the link in its browser. For example:
@@ -149,8 +183,8 @@ removed or uninstalled, the rule is shown with an error and skipped.
   not applied automatically in that case.
 - Browsers are started with `QProcess` and an argument list. The link is
   always one argument (or substituted into the arguments containing `{url}`);
-  commands that would hand it to a shell as code, or that would start Browser
-  Switcher itself, are refused.
+  commands that would hand it to a shell as code, or that would start Klinker
+  itself (or Browser Switcher, its earlier name), are refused.
 
 ## Limitations
 
