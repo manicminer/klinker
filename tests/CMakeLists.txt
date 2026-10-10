@@ -25,12 +25,13 @@ target_link_libraries(kbs_capture_fixture PRIVATE Qt6::Core)
 # set KBS_SCREENSHOT_DIR to keep the screenshots they take.
 function(kbs_add_gui_test name)
     add_executable(${name} ${name}.cpp ${ARGN})
-    target_link_libraries(${name} PRIVATE kbs_ui Qt6::Test KF6::IconThemes KF6::ColorScheme KF6::ConfigCore)
+    target_link_libraries(${name} PRIVATE kbs_app Qt6::Test KF6::IconThemes KF6::ColorScheme KF6::ConfigCore)
     target_compile_definitions(${name} PRIVATE
         KBS_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
-        KBS_CAPTURE_FIXTURE="$<TARGET_FILE:kbs_capture_fixture>")
+        KBS_CAPTURE_FIXTURE="$<TARGET_FILE:kbs_capture_fixture>"
+        KBS_APP_EXECUTABLE="$<TARGET_FILE:kde-browser-switcher>")
     target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-    add_dependencies(${name} kbs_capture_fixture)
+    add_dependencies(${name} kbs_capture_fixture kde-browser-switcher)
     add_test(NAME ${name} COMMAND ${name})
     set_tests_properties(${name} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endfunction()
@@ -38,6 +39,7 @@ endfunction()
 kbs_add_gui_test(test_placement)
 kbs_add_gui_test(test_chooser testsupport.cpp)
 kbs_add_gui_test(test_settings testsupport.cpp)
+kbs_add_gui_test(test_application testsupport.cpp)
 
 if(LayerShellQt_FOUND)
     target_link_libraries(test_chooser PRIVATE LayerShellQt::Interface)

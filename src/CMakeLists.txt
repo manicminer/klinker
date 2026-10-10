@@ -40,3 +40,20 @@ if(LayerShellQt_FOUND)
     target_link_libraries(kbs_ui PRIVATE LayerShellQt::Interface)
     target_compile_definitions(kbs_ui PRIVATE KBS_HAVE_LAYERSHELLQT)
 endif()
+
+# Command line, URL pipeline, launching and the window flow between them.
+add_library(kbs_app STATIC
+    app/application.cpp app/application.h
+    app/commandline.cpp app/commandline.h
+    app/launcher.cpp app/launcher.h
+    app/linkpipeline.cpp app/linkpipeline.h
+)
+
+target_link_libraries(kbs_app PUBLIC kbs_ui kbs_network Qt6::Widgets)
+target_compile_options(kbs_app PRIVATE -Wall -Wextra -Wpedantic)
+
+add_executable(kde-browser-switcher main.cpp)
+target_link_libraries(kde-browser-switcher PRIVATE kbs_app KF6::IconThemes)
+target_compile_options(kde-browser-switcher PRIVATE -Wall -Wextra -Wpedantic)
+
+install(TARGETS kde-browser-switcher RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
