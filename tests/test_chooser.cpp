@@ -1193,6 +1193,34 @@ private Q_SLOTS:
         klinker::test::applyTheme(false);
     }
 
+    // With the Oxygen widget style and the Breeze Dark colours.
+    void horizontalOxygenScreenshots_data()
+    {
+        QTest::addColumn<bool>("names");
+        QTest::newRow("names") << true;
+        QTest::newRow("icons") << false;
+    }
+
+    void horizontalOxygenScreenshots()
+    {
+        QFETCH(bool, names);
+        if (!klinker::test::hasStyle(u"Oxygen"_s)) {
+            QSKIP("style not installed");
+        }
+        klinker::test::ThemeScope theme(u"Oxygen"_s, true);
+        Fixture f(5, false, horizontal(names ? 48 : 64, names));
+        f.window.setFinalUrl(u"https://kde.org/announcements/plasma/6/6.7.0/"_s, u"Opened as received."_s);
+        press(&f.window, Qt::Key_Right);
+        QTRY_COMPARE(f.list->currentIndex().row(), 1);
+        const QString problem = klinker::test::horizontalStripProblem(f.list);
+        QVERIFY2(problem.isEmpty(), qPrintable(problem));
+        const QImage image = f.window.grab().toImage();
+        const int lightness = klinker::test::meanLightness(image);
+        QVERIFY2(lightness < 110, qPrintable(u"mean lightness %1"_s.arg(lightness)));
+        QCOMPARE(image.pixelColor(0, 0).alpha(), 0);
+        klinker::test::saveScreenshot(&f.window, u"chooser-horizontal-%1-oxygen-dark"_s.arg(names ? u"names"_s : u"icons"_s));
+    }
+
     void horizontalStripFitsInEveryStyle_data()
     {
         QTest::addColumn<QString>("style");

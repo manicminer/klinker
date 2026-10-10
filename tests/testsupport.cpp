@@ -97,15 +97,10 @@ bool hasStyle(const QString &style)
 
 void applyTheme(bool dark, const QString &style)
 {
-    if (!style.isEmpty()) {
-        QApplication::setStyle(style);
-    } else if (hasStyle(u"Breeze"_s)) {
-        QApplication::setStyle(u"Breeze"_s);
-    } else {
-        QApplication::setStyle(u"Fusion"_s);
-    }
     // Prefer the real colour scheme: it sets the palette and the colour sets
     // KDE widgets read from kdeglobals (such as KPageView's header) together.
+    // It is written before the style is created, because styles such as Oxygen
+    // read their colours from it once, when created.
     const QString scheme = QStandardPaths::locate(QStandardPaths::GenericDataLocation,
                                                   dark ? u"color-schemes/BreezeDark.colors"_s : u"color-schemes/BreezeLight.colors"_s);
     if (!scheme.isEmpty()) {
@@ -114,6 +109,15 @@ void applyTheme(bool dark, const QString &style)
         QFile::copy(scheme, kdeglobals);
         QFile::setPermissions(kdeglobals, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
         KSharedConfig::openConfig()->reparseConfiguration();
+    }
+    if (!style.isEmpty()) {
+        QApplication::setStyle(style);
+    } else if (hasStyle(u"Breeze"_s)) {
+        QApplication::setStyle(u"Breeze"_s);
+    } else {
+        QApplication::setStyle(u"Fusion"_s);
+    }
+    if (!scheme.isEmpty()) {
         QApplication::setPalette(KColorScheme::createApplicationPalette(KSharedConfig::openConfig()));
     } else {
         QApplication::setPalette(dark ? breezeDarkPalette() : breezeLightPalette());

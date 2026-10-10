@@ -31,6 +31,8 @@ include(CTest)
 add_subdirectory(src)
 add_subdirectory(data)
 
+install(FILES LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/${PROJECT_NAME})
+
 if(BUILD_TESTING)
     find_package(Qt6 6.5 REQUIRED COMPONENTS Test)
     # QWindowSystemInterface, for tests that report focus changes as the platform would.

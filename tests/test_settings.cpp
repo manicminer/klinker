@@ -688,6 +688,7 @@ private Q_SLOTS:
         QVERIFY(!unwrap->isChecked());
         auto *notice = child<QLabel>(f.dialog.get(), u"privacyNotice"_s);
         QVERIFY(notice->text().contains(u"three"_s));
+        QVERIFY(notice->text().contains(u"after 2 seconds and the whole check after 15"_s));
         QVERIFY(notice->text().contains(u"before you choose"_s));
 
         strip->setChecked(true);
@@ -1234,6 +1235,28 @@ private Q_SLOTS:
             QTest::qWait(600); // Oxygen fades the button out
         }
         klinker::test::saveScreenshot(f.dialog.get(), u"settings-after-apply-%1-dark"_s.arg(style.toLower()));
+    }
+
+    // The Appearance page of a horizontal chooser, with Oxygen and the Breeze
+    // Dark colours, as saved: nothing to apply and no message.
+    void appearanceScreenshot()
+    {
+        if (!klinker::test::hasStyle(u"Oxygen"_s)) {
+            QSKIP("style not installed");
+        }
+        klinker::test::ThemeScope theme(u"Oxygen"_s, true);
+        SettingsFixture f("{\"version\":1,\"chooser\":{\"style\":\"horizontal\",\"iconSize\":48,\"showBrowserNames\":true}}");
+        f.dialog->resize(760, 400);
+        f.dialog->showPage(u"appearance"_s);
+        QCOMPARE(child<QComboBox>(f.dialog.get(), u"chooserStyleCombo"_s)->currentData().toString(), u"horizontal"_s);
+        QVERIFY(!f.canApply());
+        QVERIFY(!f.message()->isVisibleTo(f.dialog.get()));
+        if (!qEnvironmentVariableIsEmpty("KLINKER_SCREENSHOT_DIR")) {
+            QTest::qWait(600); // Oxygen fades the button out
+        }
+        const int lightness = klinker::test::meanLightness(f.dialog->grab().toImage());
+        QVERIFY2(lightness < 110, qPrintable(u"mean lightness %1"_s.arg(lightness)));
+        klinker::test::saveScreenshot(f.dialog.get(), u"settings-appearance-horizontal-oxygen-dark"_s);
     }
 
     void screenshots_data()

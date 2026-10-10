@@ -159,7 +159,7 @@ Both switches are off by default.
 | Key                       | Meaning |
 |---------------------------|---------|
 | `stripTrackingParameters` | Remove known tracking query parameters (`utm_*`, `gclid`, `dclid`, `gbraid`, `wbraid`, `gclsrc`, `fbclid`, `msclkid`, `mc_cid`, `mc_eid`, `yclid`, `twclid`, `ttclid`, `igshid`, `_hsenc`, `_hsmi`, `mkt_tok`) from http(s) URLs. Names are compared exactly after percent-decoding. Everything else in the URL is kept byte for byte, including empty query components (`?&utm_source=x&` becomes `?&`); the `?` is dropped only when the query held nothing but tracking parameters. |
-| `unwrapRedirects`         | Follow up to three HTTP redirects in the background before routing. **Privacy notice:** this contacts the link's server before you choose a browser. |
+| `unwrapRedirects`         | Follow up to three HTTP redirects in the background before routing; each request times out after 2 seconds and the whole check after 15. **Privacy notice:** this contacts the link's server before you choose a browser. |
 
 ## `chooser`
 

@@ -154,6 +154,22 @@ Dark are written when `KLINKER_SCREENSHOT_DIR` is set:
 
     KLINKER_SCREENSHOT_DIR="$PWD/build/screenshots" ctest --test-dir build -R 'test_(chooser|settings|application)'
 
+The README screenshots in `docs/screenshots/` come from these tests run in a
+private D-Bus session with the KDE platform theme, which Oxygen needs to
+draw disabled buttons dimmed; they were then optimised losslessly and renamed:
+
+    dbus-run-session -- env -u DISPLAY -u WAYLAND_DISPLAY QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=kde \
+        KLINKER_SCREENSHOT_DIR="$PWD/build/screenshots" build/tests/test_chooser screenshots horizontalOxygenScreenshots
+    dbus-run-session -- env -u DISPLAY -u WAYLAND_DISPLAY QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=kde \
+        KLINKER_SCREENSHOT_DIR="$PWD/build/screenshots" build/tests/test_settings appearanceScreenshot
+
+| File | Taken as |
+|------|----------|
+| `chooser-horizontal.png` | `chooser-horizontal-names-oxygen-dark.png` |
+| `chooser-horizontal-icons.png` | `chooser-horizontal-icons-oxygen-dark.png` |
+| `chooser-vertical.png` | `chooser-light.png` |
+| `settings-appearance.png` | `settings-appearance-horizontal-oxygen-dark.png` |
+
 Wayland smoke tests of the layer-shell chooser in a private, headless KWin with
 its own D-Bus session (nothing appears on your desktop):
 

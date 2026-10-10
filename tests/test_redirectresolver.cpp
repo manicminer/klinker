@@ -864,6 +864,23 @@ private Q_SLOTS:
         QTRY_VERIFY(m_http.disconnects >= 1); // the request was abandoned
     }
 
+    // A stalled server must not hold up the chooser for long by default.
+    void defaultRequestTimeoutIsTwoSeconds()
+    {
+        m_http.on("/stall", stalled());
+
+        RedirectResolver resolver;
+        QSignalSpy spy(&resolver, &RedirectResolver::finished);
+        QElapsedTimer elapsed;
+        elapsed.start();
+        resolver.start(m_http.url("/stall"), false, true);
+        QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 3500);
+
+        QVERIFY2(elapsed.elapsed() >= 1900, QByteArray::number(elapsed.elapsed()).constData());
+        QCOMPARE(resultAt(spy).status, RedirectStatus::Timeout);
+        QCOMPARE(resultAt(spy).finalUrl, m_http.url("/stall"));
+    }
+
     void totalDeadlineBoundsTheWholeRun()
     {
         m_http.on("/stall", stalled());

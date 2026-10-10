@@ -492,7 +492,7 @@ QWidget *SettingsDialog::createPrivacyPage()
     root->addWidget(m_unwrapRedirects);
     auto *notice = descriptionLabel(
         u"Privacy notice: when this is on, the link's server is contacted in the background before you choose a browser, "
-        u"which tells it that the link was opened. At most three redirects are followed; each request times out after 5 "
+        u"which tells it that the link was opened. At most three redirects are followed; each request times out after 2 "
         u"seconds and the whole check after 15. Only response headers are read, cookies and stored credentials are not "
         u"sent, and links are only followed over http and https without downgrading from https. The chooser can skip the "
         u"check at any time; if it fails, the last safe link is offered."_s,

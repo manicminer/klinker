@@ -55,7 +55,7 @@ class RedirectResolver : public QObject
 public:
     static constexpr int MaxRedirects = 3;
 
-    explicit RedirectResolver(std::chrono::milliseconds requestTimeout = std::chrono::seconds(5),
+    explicit RedirectResolver(std::chrono::milliseconds requestTimeout = std::chrono::seconds(2),
                               std::chrono::milliseconds totalTimeout = std::chrono::seconds(15),
                               QObject *parent = nullptr);
     ~RedirectResolver() override;

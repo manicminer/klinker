@@ -20,6 +20,34 @@ started directly with an argument list, never through a shell. Functionality is
 inspired by [Switchyard](https://github.com/alyraffauf/switchyard); no code or
 assets are shared.
 
+## Screenshots
+
+<p>
+  <img src="docs/screenshots/chooser-horizontal.png" width="602"
+       alt="Horizontal chooser in the Oxygen style with Breeze Dark colours: five browser icons with their names and number badges in one row, the second selected, under the link to open">
+</p>
+
+*The horizontal strip with browser names (Oxygen widget style, Breeze Dark colours).*
+
+<p>
+  <img src="docs/screenshots/chooser-vertical.png" width="430"
+       alt="Vertical chooser in Breeze Light: a list of five browsers, each with its icon, name, command and number key, the second selected">
+  <img src="docs/screenshots/chooser-horizontal-icons.png" width="482"
+       alt="Horizontal chooser showing only larger browser icons with number badges, in the Oxygen style with Breeze Dark colours">
+</p>
+
+*The vertical list (the default, Breeze Light) and the horizontal strip with icons only.*
+
+<p>
+  <img src="docs/screenshots/settings-appearance.png" width="760"
+       alt="Settings window on the Appearance page: layout set to Horizontal icons, icon size 48 px, browser names shown, and the option to close the chooser when it loses focus">
+</p>
+
+*Appearance settings: layout, icon size, names and closing on focus loss.*
+
+The screenshots are taken by the tests from synthetic browsers and links; see
+[docs/usage.md](docs/usage.md#development).
+
 ## Building
 
 Klinker targets KDE Plasma 6. It has been built and tested on Arch
@@ -52,6 +80,7 @@ This installs:
 - `~/.local/bin/klinker`
 - `~/.local/share/applications/io.github.manicminer.Klinker.desktop`
 - `~/.local/share/icons/hicolor/scalable/apps/io.github.manicminer.Klinker.svg`
+- `~/.local/share/licenses/klinker/LICENSE`
 
 To see what would be installed without installing anything, stage it inside
 the build directory instead:
@@ -148,7 +177,8 @@ removed or uninstalled, the rule is shown with an error and skipped.
 - **Follow redirects** (off by default) contacts the link's server in the
   background *before you choose a browser*, which tells the server that the
   link was opened. At most three redirects are followed with `HEAD` requests
-  (header-only `GET` when `HEAD` is refused); no cookies or stored credentials
+  (header-only `GET` when `HEAD` is refused); each request times out after 2
+  seconds and the whole check after 15. No cookies or stored credentials
   are sent and only `http`/`https` targets without an https→http downgrade are
   followed. The chooser shows a busy state meanwhile and offers *Skip*. If the
   check fails, the chooser shows the last safe link and the reason; rules are
@@ -179,4 +209,7 @@ removed or uninstalled, the rule is shown with an error and skipped.
 
 ## Licence
 
-No licence has been chosen yet.
+Klinker is released under the [MIT License](LICENSE). It is installed as
+`share/licenses/klinker/LICENSE`. The licence covers Klinker's own code and
+files only; Qt, KDE Frameworks, LayerShellQt and the browsers and icons it
+shows are separate projects under their own licences.
