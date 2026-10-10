@@ -21,9 +21,11 @@ target_compile_options(kbs_network PRIVATE -Wall -Wextra -Wpedantic)
 
 # Widgets: chooser, settings and window placement.
 add_library(kbs_ui STATIC
+    ui/browsereditdialog.cpp ui/browsereditdialog.h
     ui/browserlistmodel.cpp ui/browserlistmodel.h
     ui/chooserwindow.cpp ui/chooserwindow.h
     ui/placement.cpp ui/placement.h
+    ui/settingsdialog.cpp ui/settingsdialog.h
     ui/theme.cpp ui/theme.h
     ui/resources.qrc
 )

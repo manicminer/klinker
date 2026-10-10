@@ -37,6 +37,7 @@ endfunction()
 
 kbs_add_gui_test(test_placement)
 kbs_add_gui_test(test_chooser testsupport.cpp)
+kbs_add_gui_test(test_settings testsupport.cpp)
 
 if(LayerShellQt_FOUND)
     target_link_libraries(test_chooser PRIVATE LayerShellQt::Interface)
