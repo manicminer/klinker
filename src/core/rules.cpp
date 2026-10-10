@@ -9,7 +9,7 @@
 
 using namespace Qt::StringLiterals;
 
-namespace kbs
+namespace klinker
 {
 
 namespace
@@ -449,4 +449,4 @@ RouteResult RuleEngine::route(const QString &url) const
     return {};
 }
 
-} // namespace kbs
+} // namespace klinker

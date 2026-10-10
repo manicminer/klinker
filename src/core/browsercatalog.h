@@ -9,7 +9,7 @@
 
 #include <optional>
 
-namespace kbs
+namespace klinker
 {
 
 // One entry of the ordered "browsers" config array. For detected browsers only
@@ -81,4 +81,4 @@ private:
     QList<BrowserSetting> m_settings;
 };
 
-} // namespace kbs
+} // namespace klinker

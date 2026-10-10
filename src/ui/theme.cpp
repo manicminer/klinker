@@ -17,13 +17,13 @@ static void initResources()
     Q_UNUSED(done);
 }
 
-namespace kbs
+namespace klinker
 {
 
 QIcon appIcon()
 {
     initResources();
-    return QIcon::fromTheme(AppId.toString(), QIcon(u":/kbs/app-icon.svg"_s));
+    return QIcon::fromTheme(AppId.toString(), QIcon(u":/klinker/app-icon.svg"_s));
 }
 
 QIcon browserIcon(const QString &spec)
@@ -60,4 +60,4 @@ QColor subduedTextColor(const QPalette &palette)
     return mixColors(palette.color(QPalette::WindowText), palette.color(QPalette::Window), 0.32);
 }
 
-} // namespace kbs
+} // namespace klinker

@@ -5,7 +5,7 @@
 #include <QTest>
 
 using namespace Qt::StringLiterals;
-using namespace kbs;
+using namespace klinker;
 
 namespace
 {
@@ -24,7 +24,7 @@ QString makeExecutable(const QTemporaryDir &dir, const QString &name)
 
 SelfIdentity testSelf(const QString &path = {})
 {
-    return {{u"kde-browser-switcher.desktop"_s}, {u"kde-browser-switcher"_s}, path.isEmpty() ? QStringList() : QStringList{path}};
+    return {{u"io.github.manicminer.Klinker.desktop"_s}, {u"klinker"_s}, path.isEmpty() ? QStringList() : QStringList{path}};
 }
 } // namespace
 
@@ -190,55 +190,48 @@ private Q_SLOTS:
     {
         QTemporaryDir dir;
         QVERIFY(dir.isValid());
-        const QString selfPath = makeExecutable(dir, u"switcher-binary"_s);
+        const QString selfPath = makeExecutable(dir, u"self-binary"_s);
         QVERIFY(QFile::link(selfPath, dir.filePath(u"link-to-self"_s)));
         const SelfIdentity self = testSelf(selfPath);
 
-        QVERIFY(isSelfCommand({u"kde-browser-switcher"_s, {}}, self));
-        QVERIFY(isSelfCommand({u"/usr/bin/kde-browser-switcher"_s, {u"{url}"_s}}, self));
+        QVERIFY(isSelfCommand({u"klinker"_s, {}}, self));
+        QVERIFY(isSelfCommand({u"/usr/bin/klinker"_s, {u"{url}"_s}}, self));
         QVERIFY(isSelfCommand({selfPath, {}}, self));
         QVERIFY(isSelfCommand({dir.filePath(u"link-to-self"_s), {}}, self));
-        QVERIFY(isSelfCommand({u"env"_s, {u"A=1"_s, u"kde-browser-switcher"_s, u"{url}"_s}}, self));
+        QVERIFY(isSelfCommand({u"env"_s, {u"A=1"_s, u"klinker"_s, u"{url}"_s}}, self));
         QVERIFY(!isSelfCommand({u"firefox"_s, {}}, self));
-        QVERIFY(!isSelfCommand({u"kde-browser-switcher-helper"_s, {}}, self));
+        QVERIFY(!isSelfCommand({u"klinker-helper"_s, {}}, self));
 
         // A wrapper that hides the program it runs might be ourselves.
-        QVERIFY(isSelfCommand({u"env"_s, {u"-S"_s, u"kde-browser-switcher"_s, u"{url}"_s}}, self));
+        QVERIFY(isSelfCommand({u"env"_s, {u"-S"_s, u"klinker"_s, u"{url}"_s}}, self));
         QVERIFY(isSelfCommand({u"env"_s, {u"-S"_s, u"firefox"_s}}, self));
-        QVERIFY(!validateCommand({u"env"_s, {u"-S"_s, u"kde-browser-switcher"_s, u"{url}"_s}}, self).ok());
+        QVERIFY(!validateCommand({u"env"_s, {u"-S"_s, u"klinker"_s, u"{url}"_s}}, self).ok());
 
-        const auto validation = validateCommand({u"env"_s, {u"kde-browser-switcher"_s}}, self);
+        const auto validation = validateCommand({u"env"_s, {u"klinker"_s}}, self);
         QVERIFY(!validation.ok());
     }
 
-    // Klinker was called Browser Switcher (kde-browser-switcher) before; an
-    // installed copy of either would open links in a loop.
-    void bothNamesAreSelf_data()
+    // An installed copy of this application would open links in a loop.
+    void installedNameIsSelf()
     {
-        QTest::addColumn<QString>("name");
-        QTest::newRow("klinker") << u"klinker"_s;
-        QTest::newRow("kde-browser-switcher") << u"kde-browser-switcher"_s;
-    }
-
-    void bothNamesAreSelf()
-    {
-        QFETCH(QString, name);
         const SelfIdentity self = SelfIdentity::current();
-        QVERIFY(isSelfCommand({name, {u"{url}"_s}}, self));
-        QVERIFY(isSelfCommand({u"/home/user/.local/bin/"_s + name, {u"{url}"_s}}, self));
-        QVERIFY(isSelfCommand({u"env"_s, {u"A=1"_s, name, u"{url}"_s}}, self));
-        const CommandValidation validation = validateCommand({name, {u"{url}"_s}}, self);
+        QVERIFY(isSelfCommand({u"klinker"_s, {u"{url}"_s}}, self));
+        QVERIFY(isSelfCommand({u"/home/user/.local/bin/klinker"_s, {u"{url}"_s}}, self));
+        QVERIFY(isSelfCommand({u"env"_s, {u"A=1"_s, u"klinker"_s, u"{url}"_s}}, self));
+        const CommandValidation validation = validateCommand({u"klinker"_s, {u"{url}"_s}}, self);
         QVERIFY(!validation.ok());
         QVERIFY2(validation.errors.join(u' ').contains(u"Klinker"_s), qPrintable(validation.errors.join(u' ')));
-        QVERIFY(!isSelfCommand({name + u"-helper"_s, {}}, self));
+        QVERIFY(!isSelfCommand({u"klinker-helper"_s, {}}, self));
     }
 
-    void selfDesktopIdsCoverBothNames()
+    void selfIsExactlyKlinker()
     {
-        const QStringList ids = SelfIdentity::current().desktopIds;
-        for (const QString &id : {u"io.github.manicminer.Klinker.desktop"_s, u"klinker.desktop"_s,
-                                  u"io.github.manicminer.KdeBrowserSwitcher.desktop"_s, u"kde-browser-switcher.desktop"_s}) {
-            QVERIFY2(ids.contains(id), qPrintable(id));
+        const SelfIdentity self = SelfIdentity::current();
+        QCOMPARE(self.desktopIds, (QStringList{u"io.github.manicminer.Klinker.desktop"_s, u"klinker.desktop"_s}));
+        QCOMPARE(self.executableNames, QStringList{u"klinker"_s});
+        // Other programs that merely share a word are browsers like any other.
+        for (const QString &program : {u"browser"_s, u"klinker2"_s, u"/opt/klinker/firefox"_s}) {
+            QVERIFY2(!isSelfCommand({program, {u"{url}"_s}}, self), qPrintable(program));
         }
     }
 
@@ -259,10 +252,10 @@ private Q_SLOTS:
         result = validateCommand({u"{url}"_s, {}}, self);
         QVERIFY(!result.ok());
 
-        result = validateCommand({u"kbs-test-definitely-missing-binary"_s, {}}, self);
+        result = validateCommand({u"klinker-test-definitely-missing-binary"_s, {}}, self);
         QVERIFY(result.ok());
         QCOMPARE(result.warnings.size(), 1);
-        QVERIFY(result.warnings.first().contains(u"kbs-test-definitely-missing-binary"_s));
+        QVERIFY(result.warnings.first().contains(u"klinker-test-definitely-missing-binary"_s));
 
         result = validateCommand({dir.filePath(u"missing"_s), {}}, self);
         QVERIFY(result.ok());
@@ -275,10 +268,10 @@ private Q_SLOTS:
         result = validateCommand({plain.fileName(), {}}, self);
         QCOMPARE(result.warnings.size(), 1);
 
-        result = validateCommand({u"env"_s, {u"A=1"_s, u"kbs-test-definitely-missing-binary"_s}}, self);
+        result = validateCommand({u"env"_s, {u"A=1"_s, u"klinker-test-definitely-missing-binary"_s}}, self);
         QVERIFY(result.ok());
         QCOMPARE(result.warnings.size(), 1);
-        QVERIFY(result.warnings.first().contains(u"kbs-test-definitely-missing-binary"_s));
+        QVERIFY(result.warnings.first().contains(u"klinker-test-definitely-missing-binary"_s));
 
         // Fail closed: what an uninspectable wrapper runs cannot be checked.
         result = validateCommand({u"env"_s, {u"-S"_s, u"firefox"_s}}, self);

@@ -2,7 +2,7 @@
 // tests/wayland-smoke.sh): shows a plain window, prints "focused" once it has
 // the keyboard focus, and quits after the given number of milliseconds.
 //
-//   kbs_focus_fixture [milliseconds]
+//   klinker_focus_fixture [milliseconds]
 
 #include <QApplication>
 #include <QTimer>

@@ -11,7 +11,7 @@ class QLabel;
 class QLineEdit;
 class QPlainTextEdit;
 
-namespace kbs
+namespace klinker
 {
 
 // Adds or edits a browser: display name, program, one argument per line and an
@@ -48,4 +48,4 @@ private:
     QStringList m_warnings;
 };
 
-} // namespace kbs
+} // namespace klinker

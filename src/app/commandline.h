@@ -4,7 +4,7 @@
 #include <QString>
 #include <QStringList>
 
-namespace kbs
+namespace klinker
 {
 
 struct CommandLine {
@@ -37,4 +37,4 @@ QString decodeArgument(const QByteArray &argument);
 // are http and https URLs with a host and file URLs.
 QString urlArgumentError(const QString &url);
 
-} // namespace kbs
+} // namespace klinker

@@ -1,4 +1,4 @@
-// Stand-in browser for launch tests: `kbs_capture_fixture --out DIR ARGS...`
+// Stand-in browser for launch tests: `klinker_capture_fixture --out DIR ARGS...`
 // writes ARGS as a JSON array to a new file in DIR and exits.
 
 #include <QByteArray>

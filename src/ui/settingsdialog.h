@@ -9,7 +9,6 @@ class KMessageWidget;
 class KPageWidgetItem;
 class QCheckBox;
 class QComboBox;
-class QFormLayout;
 class QGroupBox;
 class QLabel;
 class QLineEdit;
@@ -17,7 +16,7 @@ class QPushButton;
 class QSpinBox;
 class QTreeWidget;
 
-namespace kbs
+namespace klinker
 {
 
 // Browsers, chooser appearance, routing rules and privacy settings. All edits go to a draft;
@@ -52,7 +51,7 @@ public:
 
 Q_SIGNALS:
     // After a successful save, with the browsers known at that moment.
-    void saved(const kbs::Config &config, const QList<kbs::DetectedBrowser> &detected);
+    void saved(const klinker::Config &config, const QList<klinker::DetectedBrowser> &detected);
 
 public Q_SLOTS:
     void accept() override;
@@ -66,7 +65,6 @@ private:
 
     void refreshBrowsers(const QString &selectId = QString());
     void refreshAppearance();
-    void updateSourceRow();
     void refreshRules(int selectRow = -1);
     void updateBrowserButtons();
     void loadRuleEditor();
@@ -137,11 +135,8 @@ private:
     QLineEdit *m_testUrl = nullptr;
     QLabel *m_testResult = nullptr;
 
-    QFormLayout *m_aboutForm = nullptr;
-    QLabel *m_legacySource = nullptr;
-
     QCheckBox *m_stripTracking = nullptr;
     QCheckBox *m_unwrapRedirects = nullptr;
 };
 
-} // namespace kbs
+} // namespace klinker

@@ -6,7 +6,7 @@
 
 using namespace Qt::StringLiterals;
 
-namespace kbs
+namespace klinker
 {
 
 namespace
@@ -134,4 +134,4 @@ void LinkPipeline::onResolved(const RedirectResult &result)
     Q_EMIT finished(link);
 }
 
-} // namespace kbs
+} // namespace klinker

@@ -8,7 +8,7 @@
 #include <QWidget>
 #include <QWindow>
 
-#ifdef KBS_HAVE_LAYERSHELLQT
+#ifdef KLINKER_HAVE_LAYERSHELLQT
 #include <LayerShellQt/Window>
 #endif
 
@@ -16,7 +16,7 @@
 
 using namespace Qt::StringLiterals;
 
-namespace kbs
+namespace klinker
 {
 
 namespace
@@ -176,7 +176,7 @@ PopupPlacement placePopup(QWidget *window, const PreferredSizeFunction &preferre
     }
     window->resize(result.placement.geometry.size());
 
-#ifdef KBS_HAVE_LAYERSHELLQT
+#ifdef KLINKER_HAVE_LAYERSHELLQT
     if (isWayland(platform)) {
         // Creates the platform window without mapping it, so the layer-shell
         // role can still be assigned.
@@ -203,4 +203,4 @@ PopupPlacement placePopup(QWidget *window, const PreferredSizeFunction &preferre
     return result;
 }
 
-} // namespace kbs
+} // namespace klinker

@@ -16,7 +16,7 @@
 
 using namespace Qt::StringLiterals;
 
-namespace kbs
+namespace klinker
 {
 
 namespace
@@ -449,9 +449,8 @@ ConfigParseResult configFromJson(const QByteArray &json)
     return {config, QString(), reader.warnings};
 }
 
-ConfigStore::ConfigStore(const QString &path, const QString &legacyPath)
+ConfigStore::ConfigStore(const QString &path)
     : m_path(path)
-    , m_legacyPath(legacyPath)
 {
 }
 
@@ -460,66 +459,34 @@ QString ConfigStore::defaultPath()
     return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + u"/klinker/config.json"_s;
 }
 
-QString ConfigStore::legacyDefaultPath()
-{
-    return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + u"/kde-browser-switcher/config.json"_s;
-}
-
 QString ConfigStore::path() const
 {
     return m_path;
-}
-
-QString ConfigStore::legacyPath() const
-{
-    return m_legacyPath;
-}
-
-QString ConfigStore::sourcePath() const
-{
-    return m_sourcePath.isEmpty() ? m_path : m_sourcePath;
 }
 
 ConfigStore::LoadResult ConfigStore::load()
 {
     m_loaded = true;
     m_loadedDigest.reset();
-    m_legacyLoaded = false;
-    m_legacyDigest.reset();
-    m_sourcePath = m_path;
 
-    if (QFile::exists(m_path) || m_legacyPath.isEmpty()) {
-        return read(m_path, &m_loadedDigest);
-    }
-    m_legacyLoaded = true;
-    if (!QFile::exists(m_legacyPath)) {
-        return {LoadStatus::Missing, Config(), QString(), {}};
-    }
-    m_sourcePath = m_legacyPath;
-    return read(m_legacyPath, &m_legacyDigest);
-}
-
-ConfigStore::LoadResult ConfigStore::read(const QString &path, std::optional<QByteArray> *fileDigest)
-{
-    QFile file(path);
+    QFile file(m_path);
     if (!file.exists()) {
         return {LoadStatus::Missing, Config(), QString(), {}};
     }
     if (!file.open(QIODevice::ReadOnly)) {
         // Remember that something is there so that save() re-checks it.
-        *fileDigest = QByteArray();
-        return {LoadStatus::Invalid, Config(), u"Cannot read %1: %2"_s.arg(path, file.errorString()), {}};
+        m_loadedDigest = QByteArray();
+        return {LoadStatus::Invalid, Config(), u"Cannot read %1: %2"_s.arg(m_path, file.errorString()), {}};
     }
     const QByteArray bytes = file.readAll();
-    *fileDigest = digest(bytes);
+    m_loadedDigest = digest(bytes);
 
     const ConfigParseResult parsed = configFromJson(bytes);
     if (!parsed.config) {
-        return {LoadStatus::Invalid, Config(), u"%1: %2"_s.arg(path, parsed.error), parsed.warnings};
+        return {LoadStatus::Invalid, Config(), u"%1: %2"_s.arg(m_path, parsed.error), parsed.warnings};
     }
     return {LoadStatus::Loaded, *parsed.config, QString(), parsed.warnings};
 }
-
 
 ConfigStore::SaveResult ConfigStore::save(const Config &config)
 {
@@ -549,23 +516,13 @@ ConfigStore::SaveResult ConfigStore::save(const Config &config)
     if (const QString error = checkUnchanged(m_path, m_loadedDigest); !error.isEmpty()) {
         return {false, error};
     }
-    // The legacy file is only read, never locked or written; an earlier version
-    // saving it meanwhile changes its digest.
-    if (m_legacyLoaded) {
-        if (const QString error = checkUnchanged(m_legacyPath, m_legacyDigest); !error.isEmpty()) {
-            return {false, error};
-        }
-    }
 
     QSaveFile file(m_path);
     if (!file.open(QIODevice::WriteOnly) || file.write(json) != json.size() || !file.commit()) {
         return {false, u"Cannot save %1: %2"_s.arg(m_path, file.errorString())};
     }
     m_loadedDigest = digest(json);
-    m_legacyLoaded = false;
-    m_legacyDigest.reset();
-    m_sourcePath = m_path;
     return {true, QString()};
 }
 
-} // namespace kbs
+} // namespace klinker

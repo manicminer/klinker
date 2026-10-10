@@ -10,7 +10,7 @@
 
 #include <optional>
 
-namespace kbs
+namespace klinker
 {
 
 inline constexpr int ConfigVersion = 1;
@@ -70,23 +70,14 @@ ConfigParseResult configFromJson(const QByteArray &json);
 // loading would reject and to replace a file that is malformed or was changed by
 // someone else since it was loaded, serialises writers with a lock file and
 // replaces the file atomically.
-//
-// With a legacy path, a missing file is read from there instead (the
-// configuration of an earlier version). The legacy file is only ever read: the
-// first save writes to path(), and only if neither file changed since loading.
 class ConfigStore
 {
 public:
-    explicit ConfigStore(const QString &path, const QString &legacyPath = QString());
+    explicit ConfigStore(const QString &path);
 
     // $XDG_CONFIG_HOME/klinker/config.json
     static QString defaultPath();
-    // $XDG_CONFIG_HOME/kde-browser-switcher/config.json, from before the rename.
-    static QString legacyDefaultPath();
     QString path() const;
-    QString legacyPath() const;
-    // The file the last load() read from: path() or legacyPath().
-    QString sourcePath() const;
 
     enum class LoadStatus {
         Loaded,
@@ -111,17 +102,9 @@ public:
     SaveResult save(const Config &config);
 
 private:
-    LoadResult read(const QString &path, std::optional<QByteArray> *digest);
-
     QString m_path;
-    QString m_legacyPath;
-    QString m_sourcePath;
     bool m_loaded = false;
     std::optional<QByteArray> m_loadedDigest; // empty: the file did not exist
-    // Set while path() did not exist at loading: then the legacy file is part
-    // of what was loaded, even if it did not exist either.
-    bool m_legacyLoaded = false;
-    std::optional<QByteArray> m_legacyDigest;
 };
 
-} // namespace kbs
+} // namespace klinker

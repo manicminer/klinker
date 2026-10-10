@@ -5,7 +5,7 @@
 
 #include <optional>
 
-namespace kbs
+namespace klinker
 {
 
 // Placeholder replaced by the URL inside any argument that contains it.
@@ -91,4 +91,4 @@ struct CommandValidation {
 // the URL ends up) or embed {url} inside a shell argument.
 CommandValidation validateCommand(const CommandTemplate &command, const SelfIdentity &self);
 
-} // namespace kbs
+} // namespace klinker

@@ -86,33 +86,6 @@ command printed (for example `firefox.desktop`). Before switching, open
 Klinker once with `klinker --settings` and check that your browsers are
 listed.
 
-### Upgrading from Browser Switcher
-
-Klinker was called Browser Switcher before (`kde-browser-switcher`,
-`io.github.manicminer.KdeBrowserSwitcher`). Because the names changed,
-installing Klinker adds new files next to the old ones and changes nothing
-else: an installed Browser Switcher keeps working, and stays your default
-browser until you choose otherwise.
-
-1. Install Klinker as above. Klinker never lists or starts the old version.
-   The old version does not know the new name, so its chooser lists Klinker
-   as a browser; choosing it there just hands the link to Klinker.
-2. Your settings come along: until Klinker saves its own
-   `~/.config/klinker/config.json`, it reads
-   `~/.config/kde-browser-switcher/config.json`. The first *Apply* or *OK* in
-   Klinker's settings copies them to the new file; the old file is left as it
-   is. See [docs/configuration.md](docs/configuration.md#settings-from-browser-switcher).
-3. If `xdg-settings get default-web-browser` prints
-   `io.github.manicminer.KdeBrowserSwitcher.desktop`, make Klinker the
-   default as described above.
-4. Once Klinker works for you, remove the old version yourself, nothing does
-   it for you: run `xargs rm -v < install_manifest.txt` in its old build
-   directory, or delete `~/.local/bin/kde-browser-switcher`,
-   `~/.local/share/applications/io.github.manicminer.KdeBrowserSwitcher.desktop`
-   and `~/.local/share/icons/hicolor/scalable/apps/io.github.manicminer.KdeBrowserSwitcher.svg`.
-   Delete `~/.config/kde-browser-switcher/` as well when you no longer need
-   the old settings.
-
 ### Uninstalling
 
     xargs rm -v < build/install_manifest.txt
@@ -139,8 +112,7 @@ Settings live in `~/.config/klinker/config.json` (or under
 [docs/configuration.md](docs/configuration.md). The settings window edits the
 same file. Opening links never writes it; only *Apply* or *OK* in the settings
 does, atomically, and only if nobody else changed the file since it was
-loaded. While it does not exist, the settings of Browser Switcher are read
-instead (see [Upgrading from Browser Switcher](#upgrading-from-browser-switcher)).
+loaded. While it does not exist, the defaults are used.
 
 *Appearance* in the settings chooses between the vertical list (the default)
 and the horizontal strip of icons, its icon size and names, and whether the
@@ -184,7 +156,7 @@ removed or uninstalled, the rule is shown with an error and skipped.
 - Browsers are started with `QProcess` and an argument list. The link is
   always one argument (or substituted into the arguments containing `{url}`);
   commands that would hand it to a shell as code, or that would start Klinker
-  itself (or Browser Switcher, its earlier name), are refused.
+  itself, are refused.
 
 ## Limitations
 

@@ -7,7 +7,7 @@
 
 using namespace Qt::StringLiterals;
 
-namespace kbs
+namespace klinker
 {
 
 namespace
@@ -258,4 +258,4 @@ void RedirectResolver::dropReply()
     }
 }
 
-} // namespace kbs
+} // namespace klinker

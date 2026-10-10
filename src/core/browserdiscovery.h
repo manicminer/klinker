@@ -6,7 +6,7 @@
 #include <QString>
 #include <QStringList>
 
-namespace kbs
+namespace klinker
 {
 
 struct DetectedBrowser {
@@ -33,4 +33,4 @@ QString desktopIdForPath(const QString &applicationsDir, const QString &filePath
 // The first directory providing a desktop ID wins, even if that file hides it.
 DiscoveryResult discoverBrowsers(const QStringList &dataDirs, const SelfIdentity &self);
 
-} // namespace kbs
+} // namespace klinker

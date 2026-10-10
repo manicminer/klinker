@@ -6,7 +6,7 @@
 #include <QObject>
 #include <QString>
 
-namespace kbs
+namespace klinker
 {
 
 struct ProcessedLink {
@@ -41,7 +41,7 @@ public:
     void cancel();
 
 Q_SIGNALS:
-    void finished(const kbs::ProcessedLink &link);
+    void finished(const klinker::ProcessedLink &link);
 
 private:
     void onResolved(const RedirectResult &result);
@@ -52,4 +52,4 @@ private:
     bool m_active = false;
 };
 
-} // namespace kbs
+} // namespace klinker

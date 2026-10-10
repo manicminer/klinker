@@ -7,7 +7,7 @@
 
 using namespace Qt::StringLiterals;
 
-namespace kbs
+namespace klinker
 {
 
 namespace
@@ -122,4 +122,4 @@ QVariant BrowserFilterModel::data(const QModelIndex &index, int role) const
     return QSortFilterProxyModel::data(index, role);
 }
 
-} // namespace kbs
+} // namespace klinker

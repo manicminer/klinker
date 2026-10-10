@@ -3,7 +3,7 @@
 #include <QTest>
 
 using namespace Qt::StringLiterals;
-using namespace kbs;
+using namespace klinker;
 
 namespace
 {

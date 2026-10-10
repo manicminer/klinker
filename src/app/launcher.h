@@ -5,7 +5,7 @@
 
 #include <QString>
 
-namespace kbs
+namespace klinker
 {
 
 struct LaunchResult {
@@ -19,4 +19,4 @@ struct LaunchResult {
 // is involved. Commands that fail validation are refused.
 LaunchResult launchBrowser(const Browser &browser, const QString &url, const SelfIdentity &self);
 
-} // namespace kbs
+} // namespace klinker

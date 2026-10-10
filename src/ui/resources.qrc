@@ -1,5 +1,5 @@
 <RCC>
-    <qresource prefix="/kbs">
+    <qresource prefix="/klinker">
         <file alias="app-icon.svg">../../data/icons/io.github.manicminer.Klinker.svg</file>
     </qresource>
 </RCC>

@@ -6,7 +6,7 @@
 #include <QTest>
 
 using namespace Qt::StringLiterals;
-using namespace kbs;
+using namespace klinker;
 
 namespace
 {
@@ -90,7 +90,7 @@ private Q_SLOTS:
         QVERIFY(writeFile(apps(m_usr, u"gnome-only.desktop"_s), entry("GNOME only", "gnome-only %u", "OnlyShowIn=GNOME;\n")));
         QVERIFY(writeFile(apps(m_usr, u"not-kde.desktop"_s), entry("Not KDE", "not-kde %u", "NotShowIn=KDE;\n")));
         QVERIFY(writeFile(apps(m_usr, u"kde-only.desktop"_s), entry("KDE only", "kde-only %u", "OnlyShowIn=GNOME;KDE;\n")));
-        QVERIFY(writeFile(apps(m_usr, u"tryexec-missing.desktop"_s), entry("Missing", "missing %u", "TryExec=/nonexistent/kbs/browser\n")));
+        QVERIFY(writeFile(apps(m_usr, u"tryexec-missing.desktop"_s), entry("Missing", "missing %u", "TryExec=/nonexistent/klinker/browser\n")));
         QVERIFY(writeFile(apps(m_usr, u"tryexec-present.desktop"_s),
                           entry("Present", "present-browser %u", "TryExec=" + tryExecOk.toUtf8() + "\n")));
         QVERIFY(writeFile(apps(m_usr, u"editor.desktop"_s), entry("Editor", "editor %F", {}, "MimeType=text/plain;\n")));
@@ -100,18 +100,14 @@ private Q_SLOTS:
         QVERIFY(writeFile(apps(m_usr, u"no-exec.desktop"_s), "[Desktop Entry]\nType=Application\nName=No Exec\n" + s_browserMime));
         QVERIFY(writeFile(apps(m_usr, u"broken-exec.desktop"_s), entry("Broken", "broken \"--unterminated %u")));
         // Never ourselves.
-        QVERIFY(writeFile(apps(m_usr, u"kde-browser-switcher.desktop"_s), entry("Switcher", "/opt/other-name %u")));
-        QVERIFY(writeFile(apps(m_usr, u"switcher-copy.desktop"_s), entry("Switcher copy", "kde-browser-switcher %u")));
-        QVERIFY(writeFile(apps(m_usr, u"switcher-env.desktop"_s), entry("Switcher env", "env A=1 /usr/bin/kde-browser-switcher %u")));
         QVERIFY(writeFile(apps(m_usr, u"klinker.desktop"_s), entry("Klinker", "/opt/other-name %u")));
-        QVERIFY(writeFile(apps(m_usr, u"io.github.manicminer.Klinker.desktop"_s), entry("Klinker", "/opt/other-name %u")));
-        QVERIFY(writeFile(apps(m_local, u"io.github.manicminer.KdeBrowserSwitcher.desktop"_s), entry("Browser Switcher", "/opt/other-name %u")));
+        QVERIFY(writeFile(apps(m_local, u"io.github.manicminer.Klinker.desktop"_s), entry("Klinker", "/opt/other-name %u")));
         QVERIFY(writeFile(apps(m_usr, u"klinker-copy.desktop"_s), entry("Klinker copy", "klinker %u")));
-        QVERIFY(writeFile(apps(m_usr, u"klinker-env.desktop"_s), entry("Klinker env", "env A=1 /home/user/.local/bin/klinker %u")));
-        QVERIFY(writeFile(apps(m_local, u"switcher-local.desktop"_s), entry("Old switcher", "/home/user/.local/bin/kde-browser-switcher %U")));
+        QVERIFY(writeFile(apps(m_usr, u"klinker-env.desktop"_s), entry("Klinker env", "env A=1 /usr/bin/klinker %u")));
+        QVERIFY(writeFile(apps(m_local, u"klinker-local.desktop"_s), entry("Local Klinker", "/home/user/.local/bin/klinker %U")));
         QVERIFY(writeFile(apps(m_usr, u"klinker-helper.desktop"_s), entry("Not Klinker", "klinker-helper %u")));
         // A wrapper that hides the program it runs could be ourselves.
-        QVERIFY(writeFile(apps(m_usr, u"switcher-split.desktop"_s), entry("Switcher split", "env -S kde-browser-switcher %u")));
+        QVERIFY(writeFile(apps(m_usr, u"klinker-split.desktop"_s), entry("Klinker split", "env -S klinker %u")));
         // Subdirectories form the desktop ID.
         QVERIFY(writeFile(apps(m_usr, u"vendor/web.desktop"_s), entry("Vendor Web", "vendor-web %u")));
         // Exec string escapes and quoting.
@@ -165,16 +161,12 @@ private Q_SLOTS:
         QTest::newRow("not an application") << u"link.desktop"_s;
         QTest::newRow("no Exec") << u"no-exec.desktop"_s;
         QTest::newRow("broken Exec") << u"broken-exec.desktop"_s;
-        QTest::newRow("self by desktop ID") << u"kde-browser-switcher.desktop"_s;
-        QTest::newRow("self by executable") << u"switcher-copy.desktop"_s;
-        QTest::newRow("self behind env") << u"switcher-env.desktop"_s;
-        QTest::newRow("Klinker by desktop ID") << u"klinker.desktop"_s;
-        QTest::newRow("Klinker by application ID") << u"io.github.manicminer.Klinker.desktop"_s;
-        QTest::newRow("Browser Switcher by application ID") << u"io.github.manicminer.KdeBrowserSwitcher.desktop"_s;
-        QTest::newRow("Klinker by executable") << u"klinker-copy.desktop"_s;
-        QTest::newRow("Klinker behind env") << u"klinker-env.desktop"_s;
-        QTest::newRow("Browser Switcher by executable path") << u"switcher-local.desktop"_s;
-        QTest::newRow("uninspectable env wrapper") << u"switcher-split.desktop"_s;
+        QTest::newRow("self by desktop ID") << u"klinker.desktop"_s;
+        QTest::newRow("self by application ID") << u"io.github.manicminer.Klinker.desktop"_s;
+        QTest::newRow("self by executable") << u"klinker-copy.desktop"_s;
+        QTest::newRow("self behind env") << u"klinker-env.desktop"_s;
+        QTest::newRow("self by executable path") << u"klinker-local.desktop"_s;
+        QTest::newRow("uninspectable env wrapper") << u"klinker-split.desktop"_s;
     }
 
     void maskedAndFilteredEntriesAreExcluded()
@@ -196,7 +188,7 @@ private Q_SLOTS:
             return w.contains(u"broken-exec.desktop"_s);
         }));
         QVERIFY(std::ranges::any_of(m_result.warnings, [](const QString &w) {
-            return w.contains(u"switcher-split.desktop"_s);
+            return w.contains(u"klinker-split.desktop"_s);
         }));
     }
 

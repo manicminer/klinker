@@ -8,7 +8,7 @@
 
 using namespace Qt::StringLiterals;
 
-namespace kbs
+namespace klinker
 {
 
 namespace
@@ -83,4 +83,4 @@ UrlCleanResult stripTrackingParameters(const QString &url)
     return {result, removed};
 }
 
-} // namespace kbs
+} // namespace klinker

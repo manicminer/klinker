@@ -23,7 +23,7 @@
 #include <QToolButton>
 #include <QWindow>
 
-#ifdef KBS_HAVE_LAYERSHELLQT
+#ifdef KLINKER_HAVE_LAYERSHELLQT
 #include <LayerShellQt/Window>
 #endif
 
@@ -31,8 +31,8 @@
 #include <optional>
 
 using namespace Qt::StringLiterals;
-using kbs::ChooserEntry;
-using kbs::ChooserWindow;
+using klinker::ChooserEntry;
+using klinker::ChooserWindow;
 
 namespace
 {
@@ -53,9 +53,9 @@ QList<ChooserEntry> entries(int count)
 
 const QString Url = u"https://example.com/articles/2024/a-very-long-path/that-goes-on/and-on?page=2&sort=asc#comments"_s;
 
-kbs::ChooserSettings horizontal(int iconSize = 48, bool names = true)
+klinker::ChooserSettings horizontal(int iconSize = 48, bool names = true)
 {
-    return {kbs::ChooserStyle::Horizontal, iconSize, names, false};
+    return {klinker::ChooserStyle::Horizontal, iconSize, names, false};
 }
 
 // The browsers of the reported chooser, whose names fill their tiles.
@@ -73,9 +73,9 @@ QList<ChooserEntry> reportedEntries()
 // Fusion. Rows for styles that are not installed are skipped.
 const QStringList Styles{u"Breeze"_s, u"Oxygen"_s, u"Fusion"_s};
 
-kbs::ChooserSettings closingOnFocusLoss()
+klinker::ChooserSettings closingOnFocusLoss()
 {
-    kbs::ChooserSettings preferences;
+    klinker::ChooserSettings preferences;
     preferences.closeOnFocusLoss = true;
     return preferences;
 }
@@ -85,7 +85,7 @@ struct Fixture {
     QListView *list = nullptr;
 
     // The list gets keyboard focus on its own; tests do not give it focus.
-    explicit Fixture(int count = 3, bool busy = false, const kbs::ChooserSettings &preferences = {})
+    explicit Fixture(int count = 3, bool busy = false, const klinker::ChooserSettings &preferences = {})
     {
         window.setPreferences(preferences);
         window.setOriginalUrl(Url);
@@ -113,7 +113,7 @@ struct Fixture {
 // Sizes, places and shows the window as Application::showChooser() does.
 void showAsTheApplication(ChooserWindow &window)
 {
-    kbs::placePopup(&window, [&window](const QSize &maximum) {
+    klinker::placePopup(&window, [&window](const QSize &maximum) {
         return window.preferredSize(maximum);
     });
     window.show();
@@ -126,7 +126,7 @@ void showAsTheApplication(ChooserWindow &window)
 
 QSize screenMaximum(const QWidget *window)
 {
-    return kbs::maximumSize(window->screen()->availableGeometry(), 8);
+    return klinker::maximumSize(window->screen()->availableGeometry(), 8);
 }
 
 // Sends a key to the window as the platform would, so it reaches whichever
@@ -211,7 +211,7 @@ bool inPrivateWaylandSession(QString *why)
         *why = u"needs QT_QPA_PLATFORM=wayland"_s;
         return false;
     }
-    if (qEnvironmentVariableIsEmpty("KBS_SMOKE_RUNTIME_DIR") || qEnvironmentVariable("WAYLAND_DISPLAY") != u"kbs-smoke"_s) {
+    if (qEnvironmentVariableIsEmpty("KLINKER_SMOKE_RUNTIME_DIR") || qEnvironmentVariable("WAYLAND_DISPLAY") != u"klinker-smoke"_s) {
         *why = u"only runs in the private KWin of tests/wayland-smoke.sh"_s;
         return false;
     }
@@ -231,7 +231,7 @@ public:
     bool start()
     {
         m_process.setProcessChannelMode(QProcess::SeparateChannels);
-        m_process.start(QStringLiteral(KBS_FOCUS_FIXTURE), {u"15000"_s});
+        m_process.start(QStringLiteral(KLINKER_FOCUS_FIXTURE), {u"15000"_s});
         return m_process.waitForStarted(5000);
     }
 
@@ -291,13 +291,13 @@ class TestChooser : public QObject
 public:
     static void initMain()
     {
-        kbs::test::isolateEnvironment();
+        klinker::test::isolateEnvironment();
     }
 
 private Q_SLOTS:
     void initTestCase()
     {
-        kbs::test::applyTheme(false);
+        klinker::test::applyTheme(false);
     }
 
     void listsBrowsersWithShortcutChips()
@@ -308,7 +308,7 @@ private Q_SLOTS:
         QCOMPARE(f.window.displayedBrowserIds(), (QStringList{u"b1.desktop"_s, u"b2.desktop"_s, u"b3.desktop"_s}));
         const QModelIndex first = f.list->model()->index(0, 0);
         QCOMPARE(first.data(Qt::DisplayRole).toString(), u"Firefox"_s);
-        QCOMPARE(first.data(kbs::BrowserListModel::ShortcutRole).toInt(), 1);
+        QCOMPARE(first.data(klinker::BrowserListModel::ShortcutRole).toInt(), 1);
         QVERIFY(first.data(Qt::AccessibleTextRole).toString().contains(u"Firefox"_s));
         QVERIFY(first.data(Qt::AccessibleTextRole).toString().contains(u"1"_s));
         QVERIFY(!f.list->accessibleName().isEmpty());
@@ -329,7 +329,7 @@ private Q_SLOTS:
         QCOMPARE(chosen9.size(), 1);
         QCOMPARE(chosen9.takeFirst().at(0).toString(), u"b9.desktop"_s);
         // Rows beyond nine have no number.
-        QCOMPARE(g.list->model()->index(9, 0).data(kbs::BrowserListModel::ShortcutRole).toInt(), 0);
+        QCOMPARE(g.list->model()->index(9, 0).data(klinker::BrowserListModel::ShortcutRole).toInt(), 0);
     }
 
     void numberKeyBeyondTheListDoesNothing()
@@ -397,7 +397,7 @@ private Q_SLOTS:
         // Down moves into the list, where digits choose among the filtered rows.
         QTest::keyClick(filter, Qt::Key_Down);
         QVERIFY(f.list->hasFocus());
-        QCOMPARE(f.list->model()->index(1, 0).data(kbs::BrowserListModel::ShortcutRole).toInt(), 2);
+        QCOMPARE(f.list->model()->index(1, 0).data(klinker::BrowserListModel::ShortcutRole).toInt(), 2);
         QTest::keyClick(f.list, Qt::Key_3);
         QCOMPARE(chosen.size(), 1);
         QCOMPARE(chosen.takeFirst().at(0).toString(), u"b5.desktop"_s);
@@ -549,7 +549,7 @@ private Q_SLOTS:
         const QString nasty = u"https://example.com/<b>bold</b>/&amp;/"_s + QString(400, u'x');
         f.window.setOriginalUrl(nasty);
         f.window.setFinalUrl(nasty, u"Opened as received."_s);
-        auto *label = child<kbs::ElidedLabel>(&f.window, u"finalUrlLabel"_s);
+        auto *label = child<klinker::ElidedLabel>(&f.window, u"finalUrlLabel"_s);
         QVERIFY(label);
         QCOMPARE(label->text(), nasty);
         QCOMPARE(f.window.finalUrl(), nasty);
@@ -571,7 +571,7 @@ private Q_SLOTS:
         f.window.setOriginalUrl(u"https://t.example/r/abc"_s);
         f.window.setFinalUrl(u"https://example.org/target"_s, u"Followed 1 redirect."_s);
         auto *details = child<QToolButton>(&f.window, u"detailsButton"_s);
-        auto *original = child<kbs::ElidedLabel>(&f.window, u"originalUrlLabel"_s);
+        auto *original = child<klinker::ElidedLabel>(&f.window, u"originalUrlLabel"_s);
         auto *status = child<QLabel>(&f.window, u"redirectStatusLabel"_s);
         QVERIFY(details && original && status);
         QVERIFY(!original->isVisible());
@@ -589,7 +589,7 @@ private Q_SLOTS:
         QVERIFY2(captions.contains(u"Original"_s), qPrintable(captions.join(u", "_s)));
         QVERIFY(!captions.contains(u"Received"_s));
         QVERIFY(original->accessibleDescription().contains(u"Original"_s));
-        auto *final = child<kbs::ElidedLabel>(&f.window, u"finalUrlLabel"_s);
+        auto *final = child<klinker::ElidedLabel>(&f.window, u"finalUrlLabel"_s);
         QVERIFY(final->accessibleDescription().contains(u"Destination"_s));
         QVERIFY(child<QToolButton>(&f.window, u"copyUrlButton"_s)->accessibleName().contains(u"destination"_s));
 
@@ -630,11 +630,11 @@ private Q_SLOTS:
         window.showError(u"Could not start Vivaldi.\n"_s + QStringList(12, u"A long line of error output that wraps across the card."_s).join(u'\n'));
 
         const QRect small(0, 0, 400, 280);
-        kbs::PlacementRequest request;
+        klinker::PlacementRequest request;
         request.preferredSize = window.preferredSize();
         request.screens = {{u"small"_s, small, small}};
         request.primaryOutput = u"small"_s;
-        const kbs::Placement placement = kbs::planPlacement(request);
+        const klinker::Placement placement = klinker::planPlacement(request);
         QVERIFY(placement.isValid());
         QVERIFY(request.preferredSize.height() > placement.geometry.height()); // the content really does not fit
         window.resize(placement.geometry.size());
@@ -677,7 +677,7 @@ private Q_SLOTS:
             }
         }
         QCOMPARE(wrapped, 1);
-        kbs::test::saveScreenshot(&window, u"chooser-small-screen-%1"_s.arg(fontScale > 1 ? u"large-font"_s : u"normal-font"_s));
+        klinker::test::saveScreenshot(&window, u"chooser-small-screen-%1"_s.arg(fontScale > 1 ? u"large-font"_s : u"normal-font"_s));
     }
 
     // Ordinary content needs no scrolling at the preferred size.
@@ -705,10 +705,10 @@ private Q_SLOTS:
     void secondaryTextIsReadable()
     {
         QFETCH(bool, dark);
-        kbs::test::applyTheme(dark);
+        klinker::test::applyTheme(dark);
         const QPalette palette = QApplication::palette();
-        const double ratio = contrast(kbs::subduedTextColor(palette), palette.color(QPalette::Window));
-        kbs::test::applyTheme(false);
+        const double ratio = contrast(klinker::subduedTextColor(palette), palette.color(QPalette::Window));
+        klinker::test::applyTheme(false);
         QVERIFY2(ratio >= 4.5, qPrintable(u"contrast %1:1"_s.arg(ratio, 0, 'f', 2)));
         QVERIFY2(ratio < contrast(palette.color(QPalette::WindowText), palette.color(QPalette::Window)),
                  "secondary text must stay less prominent than normal text");
@@ -788,7 +788,7 @@ private Q_SLOTS:
 
         window.setBrowsers({}, 0);
         QVERIFY(text->text().contains(u"No web browsers"_s));
-        kbs::test::saveScreenshot(&window, u"chooser-empty-light"_s);
+        klinker::test::saveScreenshot(&window, u"chooser-empty-light"_s);
     }
 
     void footerSettingsAndCancel()
@@ -853,7 +853,7 @@ private Q_SLOTS:
     void screenshots()
     {
         QFETCH(bool, dark);
-        kbs::test::applyTheme(dark);
+        klinker::test::applyTheme(dark);
         const QString suffix = dark ? u"dark"_s : u"light"_s;
         {
             Fixture f(5);
@@ -862,29 +862,29 @@ private Q_SLOTS:
             QTest::keyClick(f.list, Qt::Key_Down);
             const QImage image = f.window.grab().toImage();
             QVERIFY(!image.isNull());
-            const int lightness = kbs::test::meanLightness(image);
+            const int lightness = klinker::test::meanLightness(image);
             QVERIFY2(dark ? lightness < 110 : lightness > 150, qPrintable(u"mean lightness %1"_s.arg(lightness)));
             // Rounded corners are transparent.
             QCOMPARE(image.pixelColor(0, 0).alpha(), 0);
-            kbs::test::saveScreenshot(&f.window, u"chooser-"_s + suffix);
+            klinker::test::saveScreenshot(&f.window, u"chooser-"_s + suffix);
 
             child<QToolButton>(&f.window, u"detailsButton"_s)->click();
             f.window.showError(u"Could not start Vivaldi: “vivaldi-stable” was not found in PATH."_s);
             f.window.resize(f.window.preferredSize());
-            kbs::test::saveScreenshot(&f.window, u"chooser-details-error-"_s + suffix);
+            klinker::test::saveScreenshot(&f.window, u"chooser-details-error-"_s + suffix);
         }
         {
             Fixture f(4);
             f.window.setBusy(u"Following redirects…"_s);
-            kbs::test::saveScreenshot(&f.window, u"chooser-busy-"_s + suffix);
+            klinker::test::saveScreenshot(&f.window, u"chooser-busy-"_s + suffix);
         }
         {
             Fixture f(14);
             f.window.resize(ChooserWindow::CardWidth, 420);
             QTest::keyClicks(f.list, u"r"_s);
-            kbs::test::saveScreenshot(&f.window, u"chooser-filtered-scrolling-"_s + suffix);
+            klinker::test::saveScreenshot(&f.window, u"chooser-filtered-scrolling-"_s + suffix);
         }
-        kbs::test::applyTheme(false);
+        klinker::test::applyTheme(false);
     }
 
     // Horizontal chooser
@@ -892,7 +892,7 @@ private Q_SLOTS:
     void verticalIsTheDefault()
     {
         ChooserWindow window;
-        QCOMPARE(window.preferences(), kbs::ChooserSettings());
+        QCOMPARE(window.preferences(), klinker::ChooserSettings());
         Fixture f(3);
         QCOMPARE(f.list->flow(), QListView::TopToBottom);
         QCOMPARE(f.window.preferredSize().width(), ChooserWindow::CardWidth);
@@ -1056,21 +1056,21 @@ private Q_SLOTS:
         QFETCH(QString, style);
         QFETCH(int, iconSize);
         QFETCH(QRect, screen);
-        if (!kbs::test::hasStyle(style)) {
+        if (!klinker::test::hasStyle(style)) {
             QSKIP("style not installed");
         }
-        kbs::test::ThemeScope theme(style);
+        klinker::test::ThemeScope theme(style);
         ChooserWindow window;
         window.setPreferences(horizontal(iconSize, true));
         window.setOriginalUrl(Url);
         window.setFinalUrl(Url, u"Opened as received."_s);
         window.setBrowsers(entries(12));
 
-        kbs::PlacementRequest request;
-        request.preferredSize = window.preferredSize(kbs::maximumSize(screen, 8));
+        klinker::PlacementRequest request;
+        request.preferredSize = window.preferredSize(klinker::maximumSize(screen, 8));
         request.screens = {{u"small"_s, screen, screen}};
         request.primaryOutput = u"small"_s;
-        const kbs::Placement placement = kbs::planPlacement(request);
+        const klinker::Placement placement = klinker::planPlacement(request);
         QVERIFY(screen.adjusted(8, 8, -8, -8).contains(placement.geometry));
         window.resize(placement.geometry.size());
         window.show();
@@ -1079,7 +1079,7 @@ private Q_SLOTS:
         QCOMPARE(window.size(), placement.geometry.size());
         QCOMPARE(window.preferences(), horizontal(iconSize, true));
         // 48 px fit; 128 px tiles would not, so smaller icons are shown.
-        QVERIFY(window.shownIconSize() >= kbs::ChooserSettings::MinIconSize);
+        QVERIFY(window.shownIconSize() >= klinker::ChooserSettings::MinIconSize);
         QVERIFY(iconSize == 48 ? window.shownIconSize() == iconSize : window.shownIconSize() < iconSize);
 
         QString why;
@@ -1089,7 +1089,7 @@ private Q_SLOTS:
         auto *list = child<QListView>(&window, u"browserList"_s);
         const QRect listRect(list->mapTo(&window, QPoint()), list->size());
         QVERIFY(window.rect().contains(listRect));
-        const QString problem = kbs::test::horizontalStripProblem(list);
+        const QString problem = klinker::test::horizontalStripProblem(list);
         QVERIFY2(problem.isEmpty(), qPrintable(problem));
         QVERIFY(list->horizontalScrollBar()->maximum() > 0);
         QCOMPARE(QApplication::focusWidget(), list);
@@ -1099,7 +1099,7 @@ private Q_SLOTS:
         press(&window, Qt::Key_Return);
         QTRY_COMPARE(chosen.size(), 1);
         QCOMPARE(chosen.takeFirst().at(0).toString(), u"b12.desktop"_s);
-        kbs::test::saveScreenshot(&window, u"chooser-horizontal-small-screen-%1-%2"_s.arg(iconSize).arg(style.toLower()));
+        klinker::test::saveScreenshot(&window, u"chooser-horizontal-small-screen-%1-%2"_s.arg(iconSize).arg(style.toLower()));
     }
 
     void preferencesApplyToAShownChooser()
@@ -1107,7 +1107,7 @@ private Q_SLOTS:
         Fixture f(4);
         press(&f.window, Qt::Key_Down);
         QTRY_COMPARE(f.list->currentIndex().row(), 1);
-        const QSize maximum = kbs::maximumSize(f.window.screen()->availableGeometry(), 8);
+        const QSize maximum = klinker::maximumSize(f.window.screen()->availableGeometry(), 8);
 
         f.window.setPreferences(horizontal(64, false));
         QCOMPARE(f.list->flow(), QListView::LeftToRight);
@@ -1140,7 +1140,7 @@ private Q_SLOTS:
         f.window.refit();
         QCOMPARE(f.window.screen(), screen);
         QVERIFY(f.window.width() > ChooserWindow::CardWidth);
-        QCOMPARE(f.window.size(), f.window.preferredSize(kbs::maximumSize(available, 8)));
+        QCOMPARE(f.window.size(), f.window.preferredSize(klinker::maximumSize(available, 8)));
         QVERIFY(available.adjusted(8, 8, -8, -8).contains(f.window.geometry()));
     }
 
@@ -1154,11 +1154,11 @@ private Q_SLOTS:
     void horizontalScreenshots()
     {
         QFETCH(bool, dark);
-        kbs::test::applyTheme(dark);
+        klinker::test::applyTheme(dark);
         const QString suffix = dark ? u"dark"_s : u"light"_s;
         const auto check = [dark](ChooserWindow *window) {
             const QImage image = window->grab().toImage();
-            const int lightness = kbs::test::meanLightness(image);
+            const int lightness = klinker::test::meanLightness(image);
             QVERIFY2(dark ? lightness < 110 : lightness > 150, qPrintable(u"mean lightness %1"_s.arg(lightness)));
             QCOMPARE(image.pixelColor(0, 0).alpha(), 0);
         };
@@ -1168,17 +1168,17 @@ private Q_SLOTS:
             press(&f.window, Qt::Key_Right);
             QTRY_COMPARE(f.list->currentIndex().row(), 1);
             check(&f.window);
-            kbs::test::saveScreenshot(&f.window, u"chooser-horizontal-names-"_s + suffix);
+            klinker::test::saveScreenshot(&f.window, u"chooser-horizontal-names-"_s + suffix);
         }
         {
             Fixture f(6, false, horizontal(96, false));
             check(&f.window);
-            kbs::test::saveScreenshot(&f.window, u"chooser-horizontal-icons-96-"_s + suffix);
+            klinker::test::saveScreenshot(&f.window, u"chooser-horizontal-icons-96-"_s + suffix);
         }
         {
             Fixture f(6, false, horizontal(24, false));
             check(&f.window);
-            kbs::test::saveScreenshot(&f.window, u"chooser-horizontal-icons-24-"_s + suffix);
+            klinker::test::saveScreenshot(&f.window, u"chooser-horizontal-icons-24-"_s + suffix);
         }
         {
             Fixture f(30, false, horizontal(64, true));
@@ -1188,9 +1188,9 @@ private Q_SLOTS:
             }
             QTRY_COMPARE(f.list->currentIndex().row(), 8);
             check(&f.window);
-            kbs::test::saveScreenshot(&f.window, u"chooser-horizontal-many-constrained-"_s + suffix);
+            klinker::test::saveScreenshot(&f.window, u"chooser-horizontal-many-constrained-"_s + suffix);
         }
-        kbs::test::applyTheme(false);
+        klinker::test::applyTheme(false);
     }
 
     void horizontalStripFitsInEveryStyle_data()
@@ -1220,10 +1220,10 @@ private Q_SLOTS:
         QFETCH(int, count);
         QFETCH(int, iconSize);
         QFETCH(bool, names);
-        if (!kbs::test::hasStyle(style)) {
+        if (!klinker::test::hasStyle(style)) {
             QSKIP("style not installed");
         }
-        kbs::test::ThemeScope theme(style);
+        klinker::test::ThemeScope theme(style);
         ChooserWindow window;
         window.setPreferences(horizontal(iconSize, names));
         window.setOriginalUrl(u"https://www.kde.org/"_s);
@@ -1238,7 +1238,7 @@ private Q_SLOTS:
         QCOMPARE(window.width(), std::min(natural.width(), maximum.width()));
         QCOMPARE(window.size(), window.preferredSize(maximum));
         QCOMPARE(window.shownIconSize(), iconSize);
-        const QString problem = kbs::test::horizontalStripProblem(list);
+        const QString problem = klinker::test::horizontalStripProblem(list);
         QVERIFY2(problem.isEmpty(), qPrintable(problem));
         QCOMPARE(list->horizontalScrollBar()->isVisible(), !fits);
         const QRect tile = list->visualRect(list->model()->index(0, 0));
@@ -1262,9 +1262,9 @@ private Q_SLOTS:
         QTRY_COMPARE(list->currentIndex().row(), 0);
         QVERIFY(list->viewport()->rect().contains(list->visualRect(list->currentIndex())));
         if (count == 6 && iconSize == 48) {
-            kbs::test::saveScreenshot(&window, u"chooser-horizontal-reported-six-%1"_s.arg(style.toLower()));
+            klinker::test::saveScreenshot(&window, u"chooser-horizontal-reported-six-%1"_s.arg(style.toLower()));
         } else if (count == 30) {
-            kbs::test::saveScreenshot(&window, u"chooser-horizontal-screen-limited-%1"_s.arg(style.toLower()));
+            klinker::test::saveScreenshot(&window, u"chooser-horizontal-screen-limited-%1"_s.arg(style.toLower()));
         }
     }
 
@@ -1281,10 +1281,10 @@ private Q_SLOTS:
     void horizontalScrollsOnlyBeyondTheNaturalWidth()
     {
         QFETCH(QString, style);
-        if (!kbs::test::hasStyle(style)) {
+        if (!klinker::test::hasStyle(style)) {
             QSKIP("style not installed");
         }
-        kbs::test::ThemeScope theme(style);
+        klinker::test::ThemeScope theme(style);
         ChooserWindow window;
         window.setPreferences(horizontal(48, true));
         window.setOriginalUrl(u"https://www.kde.org/"_s);
@@ -1299,10 +1299,10 @@ private Q_SLOTS:
         // Placed on screens exactly wide enough, and one pixel narrower.
         for (const int extra : {0, -1}) {
             const QRect screen(-1500, 120, natural.width() + 16 + extra, 900);
-            kbs::PlacementRequest request;
-            request.preferredSize = window.preferredSize(kbs::maximumSize(screen, 8));
+            klinker::PlacementRequest request;
+            request.preferredSize = window.preferredSize(klinker::maximumSize(screen, 8));
             request.screens = {{u"side"_s, screen, screen}};
-            const kbs::Placement placement = kbs::planPlacement(request);
+            const klinker::Placement placement = klinker::planPlacement(request);
             QCOMPARE(placement.geometry.size(), extra == 0 ? natural : narrower);
             QVERIFY(screen.adjusted(8, 8, -8, -8).contains(placement.geometry));
         }
@@ -1313,14 +1313,14 @@ private Q_SLOTS:
         QVERIFY(QTest::qWaitForWindowActive(&window));
         auto *list = child<QListView>(&window, u"browserList"_s);
         const int tileHeight = list->visualRect(list->model()->index(0, 0)).height();
-        QString problem = kbs::test::horizontalStripProblem(list);
+        QString problem = klinker::test::horizontalStripProblem(list);
         QVERIFY2(problem.isEmpty(), qPrintable(problem));
         QVERIFY(!list->horizontalScrollBar()->isVisible());
         QCOMPARE(list->viewport()->height(), tileHeight);
 
         window.resize(narrower);
         QTRY_VERIFY(list->horizontalScrollBar()->isVisible());
-        problem = kbs::test::horizontalStripProblem(list);
+        problem = klinker::test::horizontalStripProblem(list);
         QVERIFY2(problem.isEmpty(), qPrintable(problem));
         QCOMPARE(list->horizontalScrollBar()->maximum(), 1);
         QCOMPARE(list->viewport()->height(), tileHeight);
@@ -1334,7 +1334,7 @@ private Q_SLOTS:
         // Wide enough again: no scroll bar is left behind.
         window.resize(natural);
         QTRY_VERIFY(!list->horizontalScrollBar()->isVisible());
-        problem = kbs::test::horizontalStripProblem(list);
+        problem = klinker::test::horizontalStripProblem(list);
         QVERIFY2(problem.isEmpty(), qPrintable(problem));
     }
 
@@ -1348,17 +1348,17 @@ private Q_SLOTS:
     void horizontalWidthFollowsTheBrowsersShown()
     {
         QFETCH(QString, style);
-        if (!kbs::test::hasStyle(style)) {
+        if (!klinker::test::hasStyle(style)) {
             QSKIP("style not installed");
         }
-        kbs::test::ThemeScope theme(style);
+        klinker::test::ThemeScope theme(style);
         Fixture f(1, false, horizontal(48, true));
         const QSize maximum = screenMaximum(&f.window);
         // The window is resized at once, the strip once its layout request is handled.
         const auto check = [&f, &maximum](const QString &step) {
             QTRY_COMPARE(f.window.size(), f.window.preferredSize(maximum));
-            QTRY_VERIFY2(kbs::test::horizontalStripProblem(f.list).isEmpty(),
-                         qPrintable(step + u": "_s + kbs::test::horizontalStripProblem(f.list)));
+            QTRY_VERIFY2(klinker::test::horizontalStripProblem(f.list).isEmpty(),
+                         qPrintable(step + u": "_s + klinker::test::horizontalStripProblem(f.list)));
         };
         check(u"one"_s);
         int previous = f.window.width();
@@ -1397,17 +1397,17 @@ private Q_SLOTS:
     void horizontalRefitsWhenItsLookChanges()
     {
         QFETCH(QString, style);
-        if (!kbs::test::hasStyle(style)) {
+        if (!klinker::test::hasStyle(style)) {
             QSKIP("style not installed");
         }
-        kbs::test::ThemeScope theme(style);
+        klinker::test::ThemeScope theme(style);
         Fixture f(6);
         const QSize maximum = screenMaximum(&f.window);
         // The window is resized at once, the strip once its layout request is handled.
         const auto check = [&f, &maximum](const QString &step) {
             QTRY_COMPARE(f.window.size(), f.window.preferredSize(maximum));
-            QTRY_VERIFY2(kbs::test::horizontalStripProblem(f.list).isEmpty(),
-                         qPrintable(step + u": "_s + kbs::test::horizontalStripProblem(f.list)));
+            QTRY_VERIFY2(klinker::test::horizontalStripProblem(f.list).isEmpty(),
+                         qPrintable(step + u": "_s + klinker::test::horizontalStripProblem(f.list)));
         };
         f.window.setPreferences(horizontal(48, true));
         check(u"horizontal"_s);
@@ -1432,7 +1432,7 @@ private Q_SLOTS:
         QCOMPARE(f.rowRect(0).size(), named48);
 
         const QString other = style == u"Oxygen"_s ? u"Fusion"_s : u"Oxygen"_s;
-        if (kbs::test::hasStyle(other)) {
+        if (klinker::test::hasStyle(other)) {
             QApplication::setStyle(other);
             check(u"switched to "_s + other);
             QApplication::setStyle(style);
@@ -1462,7 +1462,7 @@ private Q_SLOTS:
         Fixture f(3);
         QVERIFY(!f.window.preferences().closeOnFocusLoss);
         QSignalSpy cancelled(&f.window, &ChooserWindow::cancelled);
-        kbs::test::focusOtherApplication();
+        klinker::test::focusOtherApplication();
         QVERIFY(!f.window.isActiveWindow());
         QTest::qWait(ChooserWindow::FocusLossDelayMs + 150);
         QCOMPARE(cancelled.size(), 0);
@@ -1475,11 +1475,11 @@ private Q_SLOTS:
         QVERIFY(f.window.isActiveWindow());
         QSignalSpy cancelled(&f.window, &ChooserWindow::cancelled);
         QSignalSpy chosen(&f.window, &ChooserWindow::browserChosen);
-        kbs::test::focusOtherApplication();
+        klinker::test::focusOtherApplication();
         QTRY_COMPARE(cancelled.size(), 1);
-        kbs::test::focusWindow(&f.window);
+        klinker::test::focusWindow(&f.window);
         QTRY_VERIFY(f.window.isActiveWindow());
-        kbs::test::focusOtherApplication();
+        klinker::test::focusOtherApplication();
         QTest::qWait(ChooserWindow::FocusLossDelayMs + 150);
         QCOMPARE(cancelled.size(), 1);
         QCOMPARE(chosen.size(), 0);
@@ -1490,7 +1490,7 @@ private Q_SLOTS:
         Fixture f(3, true, closingOnFocusLoss());
         QVERIFY(f.window.isBusy());
         QSignalSpy cancelled(&f.window, &ChooserWindow::cancelled);
-        kbs::test::focusOtherApplication();
+        klinker::test::focusOtherApplication();
         QTRY_COMPARE(cancelled.size(), 1);
     }
 
@@ -1510,16 +1510,16 @@ private Q_SLOTS:
         window.show();
         QVERIFY(QTest::qWaitForWindowExposed(&window));
         QCoreApplication::processEvents();
-        kbs::test::focusOtherApplication();
+        klinker::test::focusOtherApplication();
         QTest::qWait(ChooserWindow::FocusLossDelayMs + 150);
         QVERIFY(blocker.blocked > 0);
         QCOMPARE(cancelled.size(), 0);
 
         // Once it has had the focus, losing it counts.
         window.removeEventFilter(&blocker);
-        kbs::test::focusWindow(&window);
+        klinker::test::focusWindow(&window);
         QTRY_VERIFY(window.isActiveWindow());
-        kbs::test::focusOtherApplication();
+        klinker::test::focusOtherApplication();
         QTRY_COMPARE(cancelled.size(), 1);
     }
 
@@ -1559,10 +1559,10 @@ private Q_SLOTS:
         QTest::qWait(ChooserWindow::FocusLossDelayMs + 150);
         QCOMPARE(cancelled.size(), 0);
         dialog.close();
-        kbs::test::focusWindow(&f.window);
+        klinker::test::focusWindow(&f.window);
         QTRY_VERIFY(f.window.isActiveWindow());
 
-        kbs::test::focusOtherApplication();
+        klinker::test::focusOtherApplication();
         QTRY_COMPARE(cancelled.size(), 1);
     }
 
@@ -1572,8 +1572,8 @@ private Q_SLOTS:
     {
         Fixture f(3, false, closingOnFocusLoss());
         QSignalSpy cancelled(&f.window, &ChooserWindow::cancelled);
-        kbs::test::focusOtherApplication();
-        kbs::test::focusWindow(&f.window);
+        klinker::test::focusOtherApplication();
+        klinker::test::focusWindow(&f.window);
         QVERIFY(f.window.isActiveWindow());
         QTest::qWait(ChooserWindow::FocusLossDelayMs + 150);
         QCOMPARE(cancelled.size(), 0);
@@ -1585,7 +1585,7 @@ private Q_SLOTS:
         Fixture f(3, false, closingOnFocusLoss());
         QSignalSpy cancelled(&f.window, &ChooserWindow::cancelled);
         f.window.hide();
-        kbs::test::focusOtherApplication();
+        klinker::test::focusOtherApplication();
         QTest::qWait(ChooserWindow::FocusLossDelayMs + 150);
         QCOMPARE(cancelled.size(), 0);
 
@@ -1593,7 +1593,7 @@ private Q_SLOTS:
         QTRY_VERIFY(f.window.isActiveWindow());
         QTest::qWait(ChooserWindow::FocusLossDelayMs + 150);
         QCOMPARE(cancelled.size(), 0);
-        kbs::test::focusOtherApplication();
+        klinker::test::focusOtherApplication();
         QTRY_COMPARE(cancelled.size(), 1);
     }
 
@@ -1603,21 +1603,21 @@ private Q_SLOTS:
     {
         Fixture f(3, false, closingOnFocusLoss());
         QSignalSpy cancelled(&f.window, &ChooserWindow::cancelled);
-        kbs::test::focusOtherApplication();
+        klinker::test::focusOtherApplication();
         f.window.hide();
         ActivationBlocker blocker;
         f.window.installEventFilter(&blocker);
         f.window.show();
         QCoreApplication::processEvents();
-        kbs::test::focusOtherApplication();
+        klinker::test::focusOtherApplication();
         QTest::qWait(ChooserWindow::FocusLossDelayMs + 150);
         QCOMPARE(cancelled.size(), 0);
         QVERIFY(f.window.isVisible());
 
         f.window.removeEventFilter(&blocker);
-        kbs::test::focusWindow(&f.window);
+        klinker::test::focusWindow(&f.window);
         QTRY_VERIFY(f.window.isActiveWindow());
-        kbs::test::focusOtherApplication();
+        klinker::test::focusOtherApplication();
         QTRY_COMPARE(cancelled.size(), 1);
     }
 
@@ -1626,7 +1626,7 @@ private Q_SLOTS:
         Fixture f(3);
         QSignalSpy cancelled(&f.window, &ChooserWindow::cancelled);
         f.window.setPreferences(closingOnFocusLoss());
-        kbs::test::focusOtherApplication();
+        klinker::test::focusOtherApplication();
         QTRY_COMPARE(cancelled.size(), 1);
     }
 
@@ -1639,7 +1639,7 @@ private Q_SLOTS:
         QSignalSpy cancelled(&f.window, &ChooserWindow::cancelled);
         QSignalSpy resolved(&f.window, &ChooserWindow::focusLossResolved);
         QVERIFY(!f.window.isFocusLossPending());
-        kbs::test::focusOtherApplication();
+        klinker::test::focusOtherApplication();
         QVERIFY(f.window.isFocusLossPending());
         QTRY_COMPARE(cancelled.size(), 1);
         QVERIFY(!f.window.isFocusLossPending());
@@ -1653,14 +1653,14 @@ private Q_SLOTS:
         Fixture f(3, true, closingOnFocusLoss());
         QSignalSpy cancelled(&f.window, &ChooserWindow::cancelled);
         QSignalSpy resolved(&f.window, &ChooserWindow::focusLossResolved);
-        kbs::test::focusOtherApplication();
+        klinker::test::focusOtherApplication();
         QVERIFY(f.window.isFocusLossPending());
-        kbs::test::focusWindow(&f.window);
+        klinker::test::focusWindow(&f.window);
         QVERIFY(!f.window.isFocusLossPending());
         QCOMPARE(resolved.size(), 1);
 
         // Lost again: a new decision, and the old check stays stale.
-        kbs::test::focusOtherApplication();
+        klinker::test::focusOtherApplication();
         QVERIFY(f.window.isFocusLossPending());
         QTRY_COMPARE(cancelled.size(), 1);
         QTest::qWait(ChooserWindow::FocusLossDelayMs + 150);
@@ -1673,7 +1673,7 @@ private Q_SLOTS:
         Fixture f(3, true, closingOnFocusLoss());
         QSignalSpy cancelled(&f.window, &ChooserWindow::cancelled);
         QSignalSpy resolved(&f.window, &ChooserWindow::focusLossResolved);
-        kbs::test::focusOtherApplication();
+        klinker::test::focusOtherApplication();
         QVERIFY(f.window.isFocusLossPending());
         f.window.hide();
         QVERIFY(!f.window.isFocusLossPending());
@@ -1686,7 +1686,7 @@ private Q_SLOTS:
         f.window.show();
         QTRY_VERIFY(f.window.isActiveWindow());
         QVERIFY(!f.window.isFocusLossPending());
-        kbs::test::focusOtherApplication();
+        klinker::test::focusOtherApplication();
         QVERIFY(f.window.isFocusLossPending());
         QTRY_COMPARE(cancelled.size(), 1);
         QCOMPARE(resolved.size(), 1);
@@ -1713,7 +1713,7 @@ private Q_SLOTS:
     {
         {
             Fixture f(3, true);
-            kbs::test::focusOtherApplication();
+            klinker::test::focusOtherApplication();
             QVERIFY(!f.window.isFocusLossPending());
         }
         ChooserWindow window;
@@ -1725,7 +1725,7 @@ private Q_SLOTS:
         window.show();
         QVERIFY(QTest::qWaitForWindowExposed(&window));
         QCoreApplication::processEvents();
-        kbs::test::focusOtherApplication();
+        klinker::test::focusOtherApplication();
         QVERIFY(!window.isFocusLossPending());
     }
 
@@ -1735,7 +1735,7 @@ private Q_SLOTS:
         Fixture f(3, true, closingOnFocusLoss());
         QSignalSpy cancelled(&f.window, &ChooserWindow::cancelled);
         QSignalSpy resolved(&f.window, &ChooserWindow::focusLossResolved);
-        kbs::test::focusOtherApplication();
+        klinker::test::focusOtherApplication();
         QVERIFY(f.window.isFocusLossPending());
         f.window.dismiss();
         QVERIFY(!f.window.isFocusLossPending());
@@ -1747,10 +1747,10 @@ private Q_SLOTS:
     void waylandLayerShellPopup_data()
     {
         QTest::addColumn<bool>("busy");
-        QTest::addColumn<kbs::ChooserSettings>("preferences");
+        QTest::addColumn<klinker::ChooserSettings>("preferences");
         QTest::addColumn<QString>("style");
-        QTest::newRow("ready") << false << kbs::ChooserSettings() << QString();
-        QTest::newRow("busy, then ready") << true << kbs::ChooserSettings() << QString();
+        QTest::newRow("ready") << false << klinker::ChooserSettings() << QString();
+        QTest::newRow("busy, then ready") << true << klinker::ChooserSettings() << QString();
         QTest::newRow("horizontal") << false << horizontal(64, true) << QString();
         QTest::newRow("horizontal, busy, then ready") << true << horizontal(48, false) << QString();
         QTest::newRow("horizontal, reported six") << false << horizontal(48, true) << u"Breeze"_s;
@@ -1763,16 +1763,16 @@ private Q_SLOTS:
         if (!QGuiApplication::platformName().startsWith(u"wayland"_s)) {
             QSKIP("needs QT_QPA_PLATFORM=wayland");
         }
-#ifndef KBS_HAVE_LAYERSHELLQT
+#ifndef KLINKER_HAVE_LAYERSHELLQT
         QSKIP("built without LayerShellQt");
 #else
         QFETCH(bool, busy);
-        QFETCH(kbs::ChooserSettings, preferences);
+        QFETCH(klinker::ChooserSettings, preferences);
         QFETCH(QString, style);
-        if (!style.isEmpty() && !kbs::test::hasStyle(style)) {
+        if (!style.isEmpty() && !klinker::test::hasStyle(style)) {
             QSKIP("style not installed");
         }
-        std::optional<kbs::test::ThemeScope> theme;
+        std::optional<klinker::test::ThemeScope> theme;
         if (!style.isEmpty()) {
             theme.emplace(style);
         }
@@ -1785,13 +1785,13 @@ private Q_SLOTS:
             window.setFinalUrl(Url, u"Opened as received."_s);
         }
         window.setBrowsers(style.isEmpty() ? entries(5) : reportedEntries());
-        const kbs::PopupPlacement placed = kbs::placePopup(&window, [&window](const QSize &maximum) {
+        const klinker::PopupPlacement placed = klinker::placePopup(&window, [&window](const QSize &maximum) {
             return window.preferredSize(maximum);
         });
         QVERIFY(placed.layerShell);
-        QCOMPARE(placed.placement.mode, kbs::PlacementMode::Centered);
+        QCOMPARE(placed.placement.mode, klinker::PlacementMode::Centered);
         // Under KWin the active output comes from D-Bus; elsewhere the primary screen is used.
-        const QString active = kbs::kwinActiveOutputName();
+        const QString active = klinker::kwinActiveOutputName();
         qInfo() << "KWin active output:" << active;
         const auto names = QGuiApplication::screens();
         if (std::ranges::any_of(names, [&active](QScreen *s) {
@@ -1825,11 +1825,11 @@ private Q_SLOTS:
         }
         QTRY_COMPARE(QApplication::focusWidget(), list);
 
-        if (preferences.style == kbs::ChooserStyle::Horizontal) {
+        if (preferences.style == klinker::ChooserStyle::Horizontal) {
             // The private KWin's output is wide enough for the whole row.
             QTRY_COMPARE(window.size(), window.preferredSize(screenMaximum(&window)));
             QVERIFY(window.width() < screenMaximum(&window).width());
-            const QString problem = kbs::test::horizontalStripProblem(list);
+            const QString problem = klinker::test::horizontalStripProblem(list);
             QVERIFY2(problem.isEmpty(), qPrintable(problem));
             QVERIFY(!list->horizontalScrollBar()->isVisible());
         }
@@ -1840,7 +1840,7 @@ private Q_SLOTS:
         QTRY_COMPARE(chosen.size(), 1);
         const QString second = style.isEmpty() ? u"b2.desktop"_s : u"chromium.desktop"_s;
         QCOMPARE(chosen.takeFirst().at(0).toString(), second);
-        if (preferences.style == kbs::ChooserStyle::Horizontal) {
+        if (preferences.style == klinker::ChooserStyle::Horizontal) {
             QCOMPARE(list->flow(), QListView::LeftToRight);
             press(&window, Qt::Key_Right);
             press(&window, Qt::Key_Right);
@@ -1849,7 +1849,7 @@ private Q_SLOTS:
             QTRY_COMPARE(chosen.size(), 1);
             QCOMPARE(chosen.takeFirst().at(0).toString(), second);
         }
-        kbs::test::saveScreenshot(&window, u"chooser-wayland-layershell-%1"_s.arg(QString::fromLatin1(QTest::currentDataTag()).replace(u", "_s, u"-"_s).replace(u' ', u'-')));
+        klinker::test::saveScreenshot(&window, u"chooser-wayland-layershell-%1"_s.arg(QString::fromLatin1(QTest::currentDataTag()).replace(u", "_s, u"-"_s).replace(u' ', u'-')));
 #endif
     }
 
@@ -1867,18 +1867,18 @@ private Q_SLOTS:
         if (QString why; !inPrivateWaylandSession(&why)) {
             QSKIP(qPrintable(why));
         }
-#ifndef KBS_HAVE_LAYERSHELLQT
+#ifndef KLINKER_HAVE_LAYERSHELLQT
         QSKIP("built without LayerShellQt");
 #else
         QFETCH(bool, closeOnFocusLoss);
         ChooserWindow window;
-        kbs::ChooserSettings preferences = horizontal(48, true);
+        klinker::ChooserSettings preferences = horizontal(48, true);
         preferences.closeOnFocusLoss = closeOnFocusLoss;
         window.setPreferences(preferences);
         window.setOriginalUrl(Url);
         window.setFinalUrl(Url, u"Opened as received."_s);
         window.setBrowsers(entries(4));
-        QVERIFY(kbs::placePopup(&window, window.preferredSize()).layerShell);
+        QVERIFY(klinker::placePopup(&window, window.preferredSize()).layerShell);
         QSignalSpy cancelled(&window, &ChooserWindow::cancelled);
         window.show();
         QVERIFY(QTest::qWaitForWindowActive(&window));
@@ -1914,7 +1914,7 @@ private Q_SLOTS:
         if (QString why; !inPrivateWaylandSession(&why)) {
             QSKIP(qPrintable(why));
         }
-#ifndef KBS_HAVE_LAYERSHELLQT
+#ifndef KLINKER_HAVE_LAYERSHELLQT
         QSKIP("built without LayerShellQt");
 #else
         ChooserWindow window;
@@ -1922,7 +1922,7 @@ private Q_SLOTS:
         window.setOriginalUrl(Url);
         window.setFinalUrl(Url, u"Opened as received."_s);
         window.setBrowsers(entries(4));
-        QVERIFY(kbs::placePopup(&window, window.preferredSize()).layerShell);
+        QVERIFY(klinker::placePopup(&window, window.preferredSize()).layerShell);
         QSignalSpy cancelled(&window, &ChooserWindow::cancelled);
         window.show();
         QVERIFY(QTest::qWaitForWindowActive(&window));

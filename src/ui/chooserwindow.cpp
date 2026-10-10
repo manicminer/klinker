@@ -38,7 +38,7 @@
 
 using namespace Qt::StringLiterals;
 
-namespace kbs
+namespace klinker
 {
 
 namespace
@@ -1025,7 +1025,7 @@ void ChooserWindow::refit()
         resize(preferredSize());
         return;
     }
-    const QSize maximum = kbs::maximumSize(available, 8);
+    const QSize maximum = klinker::maximumSize(available, 8);
     const QSize size = preferredSize(maximum).boundedTo(maximum);
     // Layer-shell surfaces are positioned by the compositor; others are kept on screen.
     if (QGuiApplication::platformName().startsWith(u"wayland"_s)) {
@@ -1376,4 +1376,4 @@ void ChooserWindow::updateSize()
     }
 }
 
-} // namespace kbs
+} // namespace klinker

@@ -8,7 +8,7 @@
 
 using namespace Qt::StringLiterals;
 
-namespace kbs
+namespace klinker
 {
 
 namespace
@@ -145,4 +145,4 @@ CommandLine parseCommandLine(const QStringList &arguments)
     return result;
 }
 
-} // namespace kbs
+} // namespace klinker

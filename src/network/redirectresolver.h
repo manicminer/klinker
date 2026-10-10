@@ -15,7 +15,7 @@
 
 class QNetworkReply;
 
-namespace kbs
+namespace klinker
 {
 
 enum class RedirectStatus {
@@ -65,7 +65,7 @@ public:
     bool isActive() const;
 
 Q_SIGNALS:
-    void finished(const kbs::RedirectResult &result);
+    void finished(const klinker::RedirectResult &result);
 
 private:
     void sendRequest(bool useGet);
@@ -93,4 +93,4 @@ private:
     RedirectResult m_result;
 };
 
-} // namespace kbs
+} // namespace klinker

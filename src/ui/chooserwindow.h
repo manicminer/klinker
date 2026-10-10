@@ -17,7 +17,7 @@ class QPushButton;
 class QScrollArea;
 class QToolButton;
 
-namespace kbs
+namespace klinker
 {
 
 class BrowserDelegate;
@@ -193,4 +193,4 @@ private:
     int m_hiddenCount = 0;
 };
 
-} // namespace kbs
+} // namespace klinker

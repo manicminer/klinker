@@ -3,7 +3,7 @@
 #include <QTest>
 
 using namespace Qt::StringLiterals;
-using kbs::stripTrackingParameters;
+using klinker::stripTrackingParameters;
 
 class TestUrlCleaner : public QObject
 {
@@ -90,7 +90,7 @@ private Q_SLOTS:
     {
         QFETCH(QString, name);
         QFETCH(bool, tracking);
-        QCOMPARE(kbs::isTrackingParameter(name), tracking);
+        QCOMPARE(klinker::isTrackingParameter(name), tracking);
     }
 };
 

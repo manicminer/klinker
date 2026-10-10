@@ -19,7 +19,7 @@
 
 using namespace Qt::StringLiterals;
 
-namespace kbs
+namespace klinker
 {
 
 namespace
@@ -199,4 +199,4 @@ void BrowserEditDialog::updateIconPreview()
     m_iconPreview->setPixmap(browserIcon(m_icon->text().trimmed()).pixmap(QSize(32, 32), devicePixelRatioF()));
 }
 
-} // namespace kbs
+} // namespace klinker

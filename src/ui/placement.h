@@ -11,7 +11,7 @@
 
 class QWidget;
 
-namespace kbs
+namespace klinker
 {
 
 // Distance between the top of the card and the cursor when placed near it, so
@@ -90,4 +90,4 @@ PopupPlacement placePopup(QWidget *window, QSize preferredSize);
 using PreferredSizeFunction = std::function<QSize(const QSize &maximum)>;
 PopupPlacement placePopup(QWidget *window, const PreferredSizeFunction &preferredSize);
 
-} // namespace kbs
+} // namespace klinker

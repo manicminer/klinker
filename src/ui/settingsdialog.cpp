@@ -29,7 +29,7 @@
 
 using namespace Qt::StringLiterals;
 
-namespace kbs
+namespace klinker
 {
 
 namespace
@@ -512,7 +512,7 @@ QWidget *SettingsDialog::createAboutPage()
     auto *icon = new QLabel(page);
     icon->setPixmap(appIcon().pixmap(QSize(64, 64), devicePixelRatioF()));
     header->addWidget(icon);
-    auto *title = new QLabel(u"%1 %2"_s.arg(AppDisplayName, QStringLiteral(KBS_VERSION)), page);
+    auto *title = new QLabel(u"%1 %2"_s.arg(AppDisplayName, QStringLiteral(KLINKER_VERSION)), page);
     QFont font = title->font();
     font.setPointSizeF(font.pointSizeF() * 1.4);
     font.setWeight(QFont::DemiBold);
@@ -529,14 +529,6 @@ QWidget *SettingsDialog::createAboutPage()
         return label;
     };
     form->addRow(u"Configuration file:"_s, value(m_store ? m_store->path() : QString()));
-    // Until the first save, settings of Browser Switcher (the earlier name) are used.
-    m_legacySource = value(QString());
-    m_legacySource->setObjectName(u"legacySourceLabel"_s);
-    m_legacySource->setToolTip(u"Settings of Browser Switcher, the earlier name of %1. They are saved to the configuration "
-                               u"file above with Apply or OK; this file is left as it is."_s.arg(AppDisplayName));
-    form->addRow(u"Read from:"_s, m_legacySource);
-    m_aboutForm = form;
-    updateSourceRow();
     form->addRow(u"Desktop file:"_s, value(AppId.toString() + u".desktop"_s));
     form->addRow(u"Command:"_s, value(u"klinker [--settings] [--choose] [--config FILE] [URL…]"_s));
     root->addLayout(form);
@@ -608,7 +600,6 @@ bool SettingsDialog::apply()
     }
     // Later rescans start from the order just saved, as if the dialog had been reopened.
     m_catalog = BrowserCatalog(m_detected, config.browsers);
-    updateSourceRow();
     // Saved: Apply turning off says so; an earlier message no longer applies.
     m_message->hide();
     m_saved = config;
@@ -643,13 +634,6 @@ void SettingsDialog::showMessage(const QString &text, int type)
     m_message->show();
 }
 
-void SettingsDialog::updateSourceRow()
-{
-    const bool legacy = m_store && m_store->sourcePath() != m_store->path();
-    m_legacySource->setText(legacy ? m_store->sourcePath() : QString());
-    m_aboutForm->setRowVisible(m_legacySource, legacy);
-}
-
 void SettingsDialog::setSavingAllowed(bool allowed)
 {
     m_savingAllowed = allowed;
@@ -673,7 +657,6 @@ void SettingsDialog::reload()
     m_privacy = loaded.config.privacy;
     m_chooser = loaded.config.chooser;
     refreshAppearance();
-    updateSourceRow();
     m_stripTracking->setChecked(m_privacy.stripTrackingParameters);
     m_unwrapRedirects->setChecked(m_privacy.unwrapRedirects);
     refreshBrowsers();
@@ -1064,4 +1047,4 @@ void SettingsDialog::moveRule(int delta)
     refreshRules(to);
 }
 
-} // namespace kbs
+} // namespace klinker

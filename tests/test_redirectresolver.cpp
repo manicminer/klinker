@@ -15,9 +15,9 @@
 
 using namespace Qt::StringLiterals;
 using namespace std::chrono_literals;
-using kbs::RedirectResolver;
-using kbs::RedirectResult;
-using kbs::RedirectStatus;
+using klinker::RedirectResolver;
+using klinker::RedirectResult;
+using klinker::RedirectStatus;
 
 namespace
 {
@@ -606,7 +606,7 @@ private Q_SLOTS:
         QFETCH(QString, from);
         QFETCH(QString, to);
         QFETCH(bool, unsafe);
-        QCOMPARE(!kbs::unsafeRedirectReason(QUrl(from), QUrl(to)).isEmpty(), unsafe);
+        QCOMPARE(!klinker::unsafeRedirectReason(QUrl(from), QUrl(to)).isEmpty(), unsafe);
     }
 
     void trackingIsStrippedBeforeEveryRequest_data()

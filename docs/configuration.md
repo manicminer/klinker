@@ -8,26 +8,6 @@ Klinker keeps its settings in a single human-editable JSON file:
 A missing file means "all defaults". The application never stores visited URLs
 or any history. `--config FILE` uses another file instead.
 
-## Settings from Browser Switcher
-
-Klinker was called Browser Switcher (`kde-browser-switcher`) before. Its
-settings, in `$XDG_CONFIG_HOME/kde-browser-switcher/config.json`, are used
-without any action on your part:
-
-- While `klinker/config.json` does not exist, Klinker reads the old file
-  instead. Opening links never writes anything; the settings window shows
-  *Read from:* with the old path on its *About* page.
-- The first *Apply* or *OK* in the settings saves to `klinker/config.json`.
-  From then on only the new file is used. The old file is never changed,
-  moved or deleted; remove it yourself once you no longer need it (an
-  installed copy of the old version still uses it).
-- If either file changed since the settings were loaded (for example, the
-  old version saved its file, or another Klinker window saved the new one),
-  saving is refused and nothing is written; use *Reload from Disk*. A
-  malformed old file is reported like a malformed new one and is never
-  imported: fix it, or move it away to start with defaults.
-- With `--config FILE`, only `FILE` is used; the old file is never read.
-
 ## Example
 
 ```json
@@ -121,9 +101,8 @@ apply. "Reset to defaults" in the settings removes these keys.
 The URL is passed as an argument, never through a shell. Every argument that
 contains `{url}` has it replaced by the URL (so `--app={url}` works); if no
 argument contains `{url}`, the URL is appended as the last argument. Commands
-are rejected if they would start Klinker itself (under its current or its
-earlier name, `klinker` or `kde-browser-switcher`), if it is not clear
-which program they run (for example `env -S …`, or an `env` option the
+are rejected if they would start Klinker itself (`klinker`), if it is not
+clear which program they run (for example `env -S …`, or an `env` option the
 application does not know), or if they could hand the URL to a shell as code.
 Shells (`sh`, `bash`, `zsh`, `fish`, …) are never given a command string: any
 `-c`, `-C` or `--command` style option is rejected, even
@@ -184,8 +163,7 @@ Both switches are off by default.
 
 ## `chooser`
 
-Every key is optional; a file without `chooser` (such as one written by
-Browser Switcher) gets the vertical list.
+Every key is optional; a file without `chooser` gets the vertical list.
 
 | Key                | Type    | Default      | Meaning |
 |--------------------|---------|--------------|---------|

@@ -38,19 +38,19 @@
 #include <algorithm>
 
 using namespace Qt::StringLiterals;
-using kbs::Application;
-using kbs::BrowserSetting;
-using kbs::ChooserWindow;
-using kbs::CommandLine;
-using kbs::Config;
-using kbs::Rule;
-using kbs::RuleType;
+using klinker::Application;
+using klinker::BrowserSetting;
+using klinker::ChooserWindow;
+using klinker::CommandLine;
+using klinker::Config;
+using klinker::Rule;
+using klinker::RuleType;
 
 namespace
 {
 
-const QString Fixture = QStringLiteral(KBS_CAPTURE_FIXTURE);
-const QString AppBinary = QStringLiteral(KBS_APP_EXECUTABLE);
+const QString Fixture = QStringLiteral(KLINKER_CAPTURE_FIXTURE);
+const QString AppBinary = QStringLiteral(KLINKER_APP_EXECUTABLE);
 
 BrowserSetting manualBrowser(const QString &id, const QString &name, const QString &program, const QStringList &arguments)
 {
@@ -67,7 +67,7 @@ BrowserSetting manualBrowser(const QString &id, const QString &name, const QStri
 // a directory the capture fixture writes into.
 struct Sandbox {
     QTemporaryDir dir;
-    QString configPath = dir.path() + u"/config/kde-browser-switcher/config.json"_s;
+    QString configPath = dir.path() + u"/config/klinker/config.json"_s;
     QString dataDir = dir.path() + u"/data"_s;
     QString captureDir = dir.path() + u"/captures"_s;
 
@@ -84,7 +84,7 @@ struct Sandbox {
 
     void writeConfig(const Config &config) const
     {
-        writeBytes(kbs::configToJson(config));
+        writeBytes(klinker::configToJson(config));
     }
 
     void writeBytes(const QByteArray &bytes) const
@@ -211,7 +211,7 @@ private:
 };
 
 // Clicks "Reload from Disk" on the settings message.
-void reloadFromDisk(kbs::SettingsDialog *dialog)
+void reloadFromDisk(klinker::SettingsDialog *dialog)
 {
     auto *message = dialog->findChild<KMessageWidget *>(u"settingsMessage"_s);
     QVERIFY(message && message->isVisible());
@@ -224,7 +224,7 @@ void reloadFromDisk(kbs::SettingsDialog *dialog)
     QFAIL("no reload action");
 }
 
-void hideFirstBrowser(kbs::SettingsDialog *dialog)
+void hideFirstBrowser(klinker::SettingsDialog *dialog)
 {
     auto *table = dialog->findChild<QTreeWidget *>(u"browserTable"_s);
     table->setCurrentItem(table->topLevelItem(0));
@@ -236,22 +236,22 @@ QCheckBox *settingsCheck(Application &app, const QString &name)
     return app.settingsDialog() ? app.settingsDialog()->findChild<QCheckBox *>(name) : nullptr;
 }
 
-// The default configuration files in the test's private $XDG_CONFIG_HOME,
-// removed again afterwards.
+// The default configuration file in the test's private $XDG_CONFIG_HOME and,
+// next to it, the file of an unrelated application; removed again afterwards.
 struct DefaultLocations {
-    QString current = kbs::ConfigStore::defaultPath();
-    QString legacy = kbs::ConfigStore::legacyDefaultPath();
+    QString current = klinker::ConfigStore::defaultPath();
+    QString sibling = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + u"/other-app/config.json"_s;
 
     DefaultLocations()
     {
         QVERIFY(current.startsWith(QDir::tempPath()));
-        QVERIFY(!QFile::exists(current) && !QFile::exists(legacy));
+        QVERIFY(!QFile::exists(current) && !QFile::exists(sibling));
     }
 
     ~DefaultLocations()
     {
         QDir(QFileInfo(current).absolutePath()).removeRecursively();
-        QDir(QFileInfo(legacy).absolutePath()).removeRecursively();
+        QDir(QFileInfo(sibling).absolutePath()).removeRecursively();
     }
 
     static void write(const QString &path, const QByteArray &bytes)
@@ -294,7 +294,7 @@ Config configOnDisk(const QString &path)
     if (!file.open(QIODevice::ReadOnly)) {
         return {};
     }
-    return kbs::configFromJson(file.readAll()).config.value_or(Config());
+    return klinker::configFromJson(file.readAll()).config.value_or(Config());
 }
 
 } // namespace
@@ -306,13 +306,13 @@ class TestApplication : public QObject
 public:
     static void initMain()
     {
-        kbs::test::isolateEnvironment();
+        klinker::test::isolateEnvironment();
     }
 
 private Q_SLOTS:
     void initTestCase()
     {
-        kbs::test::applyTheme(false);
+        klinker::test::applyTheme(false);
         QVERIFY(QFileInfo(Fixture).isExecutable());
     }
 
@@ -320,41 +320,41 @@ private Q_SLOTS:
 
     void commandLineModes()
     {
-        CommandLine none = kbs::parseCommandLine({u"kde-browser-switcher"_s});
+        CommandLine none = klinker::parseCommandLine({u"klinker"_s});
         QCOMPARE(none.action, CommandLine::Action::Run);
         QVERIFY(none.settings);
         QVERIFY(none.urls.isEmpty());
 
-        CommandLine settings = kbs::parseCommandLine({u"kbs"_s, u"--settings"_s});
+        CommandLine settings = klinker::parseCommandLine({u"klinker"_s, u"--settings"_s});
         QVERIFY(settings.settings);
 
-        CommandLine links = kbs::parseCommandLine(
-            {u"kbs"_s, u"--choose"_s, u"--config"_s, u"/tmp/x.json"_s, u"https://a.example/"_s, u"http://b.example/x"_s});
+        CommandLine links = klinker::parseCommandLine(
+            {u"klinker"_s, u"--choose"_s, u"--config"_s, u"/tmp/x.json"_s, u"https://a.example/"_s, u"http://b.example/x"_s});
         QCOMPARE(links.action, CommandLine::Action::Run);
         QVERIFY(!links.settings);
         QVERIFY(links.choose);
         QCOMPARE(links.configPath, u"/tmp/x.json"_s);
         QCOMPARE(links.urls, (QStringList{u"https://a.example/"_s, u"http://b.example/x"_s}));
 
-        QCOMPARE(kbs::parseCommandLine({u"kbs"_s, u"--help"_s}).action, CommandLine::Action::ShowHelp);
-        QCOMPARE(kbs::parseCommandLine({u"kbs"_s, u"-h"_s}).action, CommandLine::Action::ShowHelp);
+        QCOMPARE(klinker::parseCommandLine({u"klinker"_s, u"--help"_s}).action, CommandLine::Action::ShowHelp);
+        QCOMPARE(klinker::parseCommandLine({u"klinker"_s, u"-h"_s}).action, CommandLine::Action::ShowHelp);
         // Only documented options exist; Qt's --help-all must not fall through to opening settings.
-        QCOMPARE(kbs::parseCommandLine({u"kbs"_s, u"--help-all"_s}).action, CommandLine::Action::Error);
-        QCOMPARE(kbs::parseCommandLine({u"kbs"_s, u"--version"_s}).action, CommandLine::Action::ShowVersion);
-        QCOMPARE(kbs::parseCommandLine({u"kbs"_s, u"--bogus"_s}).action, CommandLine::Action::Error);
+        QCOMPARE(klinker::parseCommandLine({u"klinker"_s, u"--help-all"_s}).action, CommandLine::Action::Error);
+        QCOMPARE(klinker::parseCommandLine({u"klinker"_s, u"--version"_s}).action, CommandLine::Action::ShowVersion);
+        QCOMPARE(klinker::parseCommandLine({u"klinker"_s, u"--bogus"_s}).action, CommandLine::Action::Error);
     }
 
     void linksArePreservedExactly()
     {
         const QString odd = u"https://Example.COM:8443/a%2Fb/%7Euser/?q=a+b&q=a%20b&&utm_source=x#frag?x=1"_s;
-        QCOMPARE(kbs::parseCommandLine({u"kbs"_s, odd}).urls, QStringList{odd});
+        QCOMPARE(klinker::parseCommandLine({u"klinker"_s, odd}).urls, QStringList{odd});
     }
 
     void rawArgumentsKeepEveryByte()
     {
-        QCOMPARE(kbs::decodeArgument(QByteArray("https://e.example/caf\xc3\xa9")), u"https://e.example/café"_s);
+        QCOMPARE(klinker::decodeArgument(QByteArray("https://e.example/caf\xc3\xa9")), u"https://e.example/café"_s);
         // Invalid UTF-8 would otherwise turn into U+FFFD replacement characters.
-        QCOMPARE(kbs::decodeArgument(QByteArray("https://e.example/\xff\xfe?a=\xe9&b=%41")), u"https://e.example/%FF%FE?a=%E9&b=%41"_s);
+        QCOMPARE(klinker::decodeArgument(QByteArray("https://e.example/\xff\xfe?a=\xe9&b=%41")), u"https://e.example/%FF%FE?a=%E9&b=%41"_s);
     }
 
     void invalidLinksAreRejected_data()
@@ -373,8 +373,8 @@ private Q_SLOTS:
     void invalidLinksAreRejected()
     {
         QFETCH(QString, url);
-        QVERIFY(!kbs::urlArgumentError(url).isEmpty());
-        const CommandLine parsed = kbs::parseCommandLine({u"kbs"_s, u"https://ok.example/"_s, url});
+        QVERIFY(!klinker::urlArgumentError(url).isEmpty());
+        const CommandLine parsed = klinker::parseCommandLine({u"klinker"_s, u"https://ok.example/"_s, url});
         QCOMPARE(parsed.action, CommandLine::Action::Error);
         QVERIFY(!parsed.error.isEmpty());
     }
@@ -386,10 +386,10 @@ private Q_SLOTS:
         QFile file(path);
         QVERIFY(file.open(QIODevice::WriteOnly));
         file.close();
-        const CommandLine parsed = kbs::parseCommandLine({u"kbs"_s, path});
+        const CommandLine parsed = klinker::parseCommandLine({u"klinker"_s, path});
         QCOMPARE(parsed.action, CommandLine::Action::Run);
         QCOMPARE(parsed.urls, QStringList{QUrl::fromLocalFile(path).toString(QUrl::FullyEncoded)});
-        QVERIFY(kbs::urlArgumentError(u"file:///etc/hosts"_s).isEmpty());
+        QVERIFY(klinker::urlArgumentError(u"file:///etc/hosts"_s).isEmpty());
     }
 
     void binaryHelpVersionAndErrors()
@@ -410,7 +410,7 @@ private Q_SLOTS:
         version.start(AppBinary, {u"--version"_s});
         QVERIFY(version.waitForFinished(10000));
         QCOMPARE(version.exitCode(), 0);
-        QCOMPARE(QString::fromUtf8(version.readAllStandardOutput()), u"klinker %1\n"_s.arg(QStringLiteral(KBS_VERSION)));
+        QCOMPARE(QString::fromUtf8(version.readAllStandardOutput()), u"klinker %1\n"_s.arg(QStringLiteral(KLINKER_VERSION)));
 
         QProcess bad;
         QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
@@ -426,7 +426,7 @@ private Q_SLOTS:
 
     void desktopFileUsesTheKlinkerIdentity()
     {
-        QFile file(QStringLiteral(KBS_SOURCE_DIR "/data/io.github.manicminer.Klinker.desktop"));
+        QFile file(QStringLiteral(KLINKER_SOURCE_DIR "/data/io.github.manicminer.Klinker.desktop"));
         QVERIFY(file.open(QIODevice::ReadOnly));
         const QString text = QString::fromUtf8(file.readAll());
         const QStringList lines = text.split(u'\n');
@@ -434,10 +434,9 @@ private Q_SLOTS:
                                     u"Name=Configure Klinker"_s, u"Exec=klinker --settings"_s}) {
             QVERIFY2(lines.contains(line), qPrintable(line));
         }
-        QVERIFY(!text.contains(u"Browser Switcher"_s));
-        QVERIFY(QFile::exists(QStringLiteral(KBS_SOURCE_DIR "/data/icons/io.github.manicminer.Klinker.svg")));
-        QCOMPARE(kbs::AppDisplayName.toString(), u"Klinker"_s);
-        QCOMPARE(kbs::AppId.toString(), u"io.github.manicminer.Klinker"_s);
+        QVERIFY(QFile::exists(QStringLiteral(KLINKER_SOURCE_DIR "/data/icons/io.github.manicminer.Klinker.svg")));
+        QCOMPARE(klinker::AppDisplayName.toString(), u"Klinker"_s);
+        QCOMPARE(klinker::AppId.toString(), u"io.github.manicminer.Klinker"_s);
     }
 
     // Launching
@@ -445,12 +444,12 @@ private Q_SLOTS:
     void launchPassesTheUrlAsOneArgument()
     {
         Sandbox box;
-        kbs::Browser browser;
+        klinker::Browser browser;
         browser.id = u"cap"_s;
         browser.name = u"Capture"_s;
         browser.command = {Fixture, {u"--out"_s, box.captureDir, u"--flag"_s, u"{url}"_s}};
         const QString url = u"https://example.com/a;b|c&d$(touch x)`id`?q='\"*#frag"_s;
-        const kbs::LaunchResult result = kbs::launchBrowser(browser, url, kbs::appSelfIdentity());
+        const klinker::LaunchResult result = klinker::launchBrowser(browser, url, klinker::appSelfIdentity());
         QVERIFY2(result.ok, qPrintable(result.error));
         QVERIFY(result.pid > 0);
         QTRY_COMPARE(box.captures().size(), 1);
@@ -460,86 +459,107 @@ private Q_SLOTS:
 
     void launchErrorsAreReported()
     {
-        kbs::Browser missing;
+        klinker::Browser missing;
         missing.name = u"Missing"_s;
         missing.command = {u"/nonexistent/browser"_s, {u"{url}"_s}};
-        kbs::LaunchResult result = kbs::launchBrowser(missing, u"https://example.com/"_s, kbs::appSelfIdentity());
+        klinker::LaunchResult result = klinker::launchBrowser(missing, u"https://example.com/"_s, klinker::appSelfIdentity());
         QVERIFY(!result.ok);
         QVERIFY(result.error.contains(u"Missing"_s));
 
-        for (const QString &name : {u"klinker"_s, u"kde-browser-switcher"_s, AppBinary}) {
-            kbs::Browser self;
+        for (const QString &name : {u"klinker"_s, u"/usr/bin/klinker"_s, AppBinary}) {
+            klinker::Browser self;
             self.name = u"Loop"_s;
             self.command = {name, {u"{url}"_s}};
-            result = kbs::launchBrowser(self, u"https://example.com/"_s, kbs::appSelfIdentity());
+            result = klinker::launchBrowser(self, u"https://example.com/"_s, klinker::appSelfIdentity());
             QVERIFY2(!result.ok, qPrintable(name));
         }
 
-        kbs::Browser ok;
+        klinker::Browser ok;
         ok.name = u"Fixture"_s;
         ok.command = {Fixture, {u"--out"_s, u"/nonexistent"_s, u"{url}"_s}};
-        result = kbs::launchBrowser(ok, u"-oops"_s, kbs::appSelfIdentity());
+        result = klinker::launchBrowser(ok, u"-oops"_s, klinker::appSelfIdentity());
         QVERIFY(!result.ok);
     }
 
     void appIdentityUsesTheInstalledDesktopId()
     {
-        const kbs::SelfIdentity self = kbs::appSelfIdentity();
+        const klinker::SelfIdentity self = klinker::appSelfIdentity();
         QCOMPARE(self.desktopIds.first(), u"io.github.manicminer.Klinker.desktop"_s);
-        // Earlier installations under the old name are never offered or started either.
-        QVERIFY(self.desktopIds.contains(u"io.github.manicminer.KdeBrowserSwitcher.desktop"_s));
-        QVERIFY(self.desktopIds.contains(u"kde-browser-switcher.desktop"_s));
-        QVERIFY(self.desktopIds.contains(u"klinker.desktop"_s));
-        QCOMPARE(self.executableNames, (QStringList{u"klinker"_s, u"kde-browser-switcher"_s}));
+        QCOMPARE(self.desktopIds, (QStringList{u"io.github.manicminer.Klinker.desktop"_s, u"klinker.desktop"_s}));
+        QCOMPARE(self.executableNames, QStringList{u"klinker"_s});
         QVERIFY(self.executablePaths.contains(QCoreApplication::applicationFilePath()));
     }
 
-    // Configuration of Browser Switcher, the name before Klinker
+    // Configuration location
 
-    void defaultLocationReadsTheLegacyConfiguration()
+    void defaultLocationIsReadWhenPresent()
     {
         Sandbox box;
         DefaultLocations files;
-        Config old;
-        old.browsers = {box.capture(u"a"_s, u"Alpha"_s), box.capture(u"b"_s, u"Beta"_s)};
-        old.rules = {{QString(), true, RuleType::Domain, u"old.example"_s, u"b"_s}};
-        const QByteArray legacy = kbs::configToJson(old);
-        DefaultLocations::write(files.legacy, legacy);
+        Config config;
+        config.browsers = {box.capture(u"a"_s, u"Alpha"_s), box.capture(u"b"_s, u"Beta"_s)};
+        config.rules = {{QString(), true, RuleType::Domain, u"routed.example"_s, u"b"_s}};
+        const QByteArray bytes = klinker::configToJson(config);
+        DefaultLocations::write(files.current, bytes);
 
         Application::Options options = box.options();
         options.configPath.clear();
         Application app(options);
-        QCOMPARE(app.config(), old);
-
-        // Opening links reads the old file and writes nothing.
+        QCOMPARE(app.config(), config);
         QSignalSpy launched(&app, &Application::launched);
-        app.openUrls({u"https://old.example/"_s});
+        app.openUrls({u"https://routed.example/"_s});
         QTRY_COMPARE(launched.size(), 1);
         QCOMPARE(launched.first().at(0).toString(), u"b"_s);
-        QVERIFY(!QFile::exists(files.current));
+        QCOMPARE(DefaultLocations::read(files.current), bytes);
+    }
+
+    void missingDefaultGivesDefaultsAndIgnoresOtherFiles()
+    {
+        Sandbox box;
+        DefaultLocations files;
+        Config other;
+        other.browsers = {box.capture(u"a"_s, u"Alpha"_s)};
+        other.rules = {{QString(), true, RuleType::Domain, u"routed.example"_s, u"a"_s}};
+        const QByteArray sibling = klinker::configToJson(other);
+        DefaultLocations::write(files.sibling, sibling);
+
+        Application::Options options = box.options();
+        options.configPath.clear();
+        Application app(options);
+        QCOMPARE(app.config(), Config());
+
+        // No rule applies, so nothing is launched: the chooser asks.
+        QSignalSpy launched(&app, &Application::launched);
+        QSignalSpy finished(&app, &Application::finished);
+        app.openUrls({u"https://routed.example/"_s});
+        QTRY_VERIFY(app.chooser() && app.chooser()->isVisible());
+        QTest::keyClick(chooserList(app), Qt::Key_Escape);
+        QTRY_COMPARE(finished.size(), 1);
+        QCOMPARE(launched.size(), 0);
+        QVERIFY(box.captures().isEmpty());
         QVERIFY(!QFileInfo::exists(QFileInfo(files.current).absolutePath()));
 
-        // Saving the settings imports them into the new location only.
+        // Saving writes the default location only.
         app.openSettings();
         QTRY_VERIFY(app.settingsDialog());
         settingsCheck(app, u"stripTrackingCheck"_s)->setChecked(true);
         app.settingsDialog()->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
         QTRY_VERIFY(!app.settingsDialog());
-        Config expected = old;
+        Config expected;
         expected.privacy.stripTrackingParameters = true;
         QCOMPARE(configOnDisk(files.current), expected);
-        QCOMPARE(DefaultLocations::read(files.legacy), legacy);
+        QCOMPARE(DefaultLocations::read(files.sibling), sibling);
         QCOMPARE(app.config(), expected);
     }
 
-    void explicitConfigNeverReadsTheLegacyConfiguration()
+    void explicitConfigIgnoresTheDefaultLocation()
     {
         Sandbox box;
         DefaultLocations files;
-        Config old;
-        old.browsers = {box.capture(u"a"_s, u"Alpha"_s)};
-        const QByteArray legacy = kbs::configToJson(old);
-        DefaultLocations::write(files.legacy, legacy);
+        Config atDefault;
+        atDefault.browsers = {box.capture(u"a"_s, u"Alpha"_s)};
+        const QByteArray bytes = klinker::configToJson(atDefault);
+        DefaultLocations::write(files.current, bytes);
 
         Application app(box.options());
         QCOMPARE(app.config(), Config());
@@ -547,8 +567,7 @@ private Q_SLOTS:
         QTRY_VERIFY(app.settingsDialog());
         QVERIFY(app.settingsDialog()->apply());
         QVERIFY(QFile::exists(box.configPath));
-        QVERIFY(!QFile::exists(files.current));
-        QCOMPARE(DefaultLocations::read(files.legacy), legacy);
+        QCOMPARE(DefaultLocations::read(files.current), bytes);
         app.settingsDialog()->reject();
     }
 
@@ -556,13 +575,13 @@ private Q_SLOTS:
 
     void pipelineWithoutPrivacyKeepsTheLink()
     {
-        kbs::LinkPipeline pipeline;
-        QSignalSpy finished(&pipeline, &kbs::LinkPipeline::finished);
+        klinker::LinkPipeline pipeline;
+        QSignalSpy finished(&pipeline, &klinker::LinkPipeline::finished);
         const QString url = u"https://example.com/?utm_source=x&id=1#f"_s;
         pipeline.start(url, {});
         QCOMPARE(finished.size(), 0); // never synchronous
         QTRY_COMPARE(finished.size(), 1);
-        const auto link = finished.first().at(0).value<kbs::ProcessedLink>();
+        const auto link = finished.first().at(0).value<klinker::ProcessedLink>();
         QCOMPARE(link.originalUrl, url);
         QCOMPARE(link.finalUrl, url);
         QVERIFY(!link.warning);
@@ -571,12 +590,12 @@ private Q_SLOTS:
 
     void pipelineStripsTrackingWithoutNetwork()
     {
-        kbs::LinkPipeline pipeline;
-        QSignalSpy finished(&pipeline, &kbs::LinkPipeline::finished);
-        QVERIFY(!kbs::LinkPipeline::needsNetwork(u"https://e.example/"_s, {true, false}));
+        klinker::LinkPipeline pipeline;
+        QSignalSpy finished(&pipeline, &klinker::LinkPipeline::finished);
+        QVERIFY(!klinker::LinkPipeline::needsNetwork(u"https://e.example/"_s, {true, false}));
         pipeline.start(u"https://e.example/p?utm_source=x&id=1&fbclid=y#f"_s, {true, false});
         QTRY_COMPARE(finished.size(), 1);
-        const auto link = finished.first().at(0).value<kbs::ProcessedLink>();
+        const auto link = finished.first().at(0).value<klinker::ProcessedLink>();
         QCOMPARE(link.finalUrl, u"https://e.example/p?id=1#f"_s);
         QVERIFY(link.status.contains(u"2"_s));
     }
@@ -588,14 +607,14 @@ private Q_SLOTS:
         server.routes.insert("/start", {302, "/middle?x=1&utm_medium=b"});
         server.routes.insert("/middle?x=1", {301, "/final?keep=1&gclid=z"});
         server.routes.insert("/final?keep=1", {200, {}});
-        kbs::LinkPipeline pipeline;
-        QSignalSpy finished(&pipeline, &kbs::LinkPipeline::finished);
+        klinker::LinkPipeline pipeline;
+        QSignalSpy finished(&pipeline, &klinker::LinkPipeline::finished);
         const QString start = server.url("/start?utm_source=a");
-        QVERIFY(kbs::LinkPipeline::needsNetwork(start, {true, true}));
+        QVERIFY(klinker::LinkPipeline::needsNetwork(start, {true, true}));
         pipeline.start(start, {true, true});
         QVERIFY(pipeline.isActive());
         QTRY_COMPARE_WITH_TIMEOUT(finished.size(), 1, 10000);
-        const auto link = finished.first().at(0).value<kbs::ProcessedLink>();
+        const auto link = finished.first().at(0).value<klinker::ProcessedLink>();
         QCOMPARE(link.originalUrl, start);
         QCOMPARE(link.finalUrl, server.url("/final?keep=1"));
         QVERIFY2(!link.warning, qPrintable(link.status));
@@ -610,13 +629,13 @@ private Q_SLOTS:
     {
         RedirectServer server;
         server.stalled.insert("/slow");
-        kbs::LinkPipeline pipeline;
-        QSignalSpy finished(&pipeline, &kbs::LinkPipeline::finished);
+        klinker::LinkPipeline pipeline;
+        QSignalSpy finished(&pipeline, &klinker::LinkPipeline::finished);
         pipeline.start(server.url("/slow"), {false, true});
         QTRY_VERIFY(!server.requests.isEmpty());
         pipeline.skip();
         QTRY_COMPARE(finished.size(), 1);
-        const auto link = finished.first().at(0).value<kbs::ProcessedLink>();
+        const auto link = finished.first().at(0).value<klinker::ProcessedLink>();
         QCOMPARE(link.finalUrl, server.url("/slow"));
         QVERIFY(link.skipped);
         QTest::qWait(50);
@@ -627,11 +646,11 @@ private Q_SLOTS:
     {
         RedirectServer server;
         server.routes.insert("/bad", {302, "javascript:alert(1)"});
-        kbs::LinkPipeline pipeline;
-        QSignalSpy finished(&pipeline, &kbs::LinkPipeline::finished);
+        klinker::LinkPipeline pipeline;
+        QSignalSpy finished(&pipeline, &klinker::LinkPipeline::finished);
         pipeline.start(server.url("/bad"), {false, true});
         QTRY_COMPARE_WITH_TIMEOUT(finished.size(), 1, 10000);
-        const auto link = finished.first().at(0).value<kbs::ProcessedLink>();
+        const auto link = finished.first().at(0).value<klinker::ProcessedLink>();
         QVERIFY(link.warning);
         QCOMPARE(link.finalUrl, server.url("/bad"));
         QVERIFY(!link.status.isEmpty());
@@ -665,7 +684,7 @@ private Q_SLOTS:
     void chooserLaunchesTheChoiceAndSavesNothing()
     {
         Sandbox box;
-        kbs::test::writeBrowserDesktopFile(box.dataDir, u"detected.desktop"_s, u"Detected"_s, Fixture + u" --out "_s + box.captureDir + u" --browser=detected %u"_s);
+        klinker::test::writeBrowserDesktopFile(box.dataDir, u"detected.desktop"_s, u"Detected"_s, Fixture + u" --out "_s + box.captureDir + u" --browser=detected %u"_s);
         Application app(box.options());
         QSignalSpy finished(&app, &Application::finished);
         app.openUrls({u"https://kde.org/"_s});
@@ -738,7 +757,7 @@ private Q_SLOTS:
         QTRY_VERIFY(app.chooser()->messageText().contains(u"Broken"_s));
         QVERIFY(app.chooser()->isVisible());
         QCOMPARE(finished.size(), 0);
-        kbs::test::saveScreenshot(app.chooser(), u"app-launch-error-light"_s);
+        klinker::test::saveScreenshot(app.chooser(), u"app-launch-error-light"_s);
 
         QTest::keyClick(chooserList(app), Qt::Key_2);
         QTRY_COMPARE(finished.size(), 1);
@@ -813,7 +832,7 @@ private Q_SLOTS:
         QVERIFY(app.chooser()->isBusy());
         QTest::keyClick(chooserList(app), Qt::Key_1);
         QCOMPARE(launched.size(), 0);
-        kbs::test::saveScreenshot(app.chooser(), u"app-busy-light"_s);
+        klinker::test::saveScreenshot(app.chooser(), u"app-busy-light"_s);
         app.chooser()->findChild<QPushButton *>(u"skipButton"_s)->click();
         QTRY_VERIFY(!app.chooser()->isBusy());
         QTest::keyClick(chooserList(app), Qt::Key_1);
@@ -1039,7 +1058,7 @@ private Q_SLOTS:
         QTRY_VERIFY(app.settingsDialog());
         settingsCheck(app, u"stripTrackingCheck"_s)->setChecked(true);
         QVERIFY(app.settingsDialog()->apply());
-        QCOMPARE(app.config().privacy, (kbs::PrivacySettings{true, false}));
+        QCOMPARE(app.config().privacy, (klinker::PrivacySettings{true, false}));
 
         {
             Application other(box.options());
@@ -1057,7 +1076,7 @@ private Q_SLOTS:
         app.settingsDialog()->reject();
         QTRY_VERIFY(!app.settingsDialog());
         // Still what it applied, still paired with what it saved.
-        QCOMPARE(app.config().privacy, (kbs::PrivacySettings{true, false}));
+        QCOMPARE(app.config().privacy, (klinker::PrivacySettings{true, false}));
 
         app.openSettings();
         QTRY_VERIFY(app.settingsDialog());
@@ -1071,12 +1090,12 @@ private Q_SLOTS:
         QVERIFY(app.settingsDialog()->apply());
         app.settingsDialog()->reject();
         QTRY_VERIFY(!app.settingsDialog());
-        QCOMPARE(app.config().privacy, (kbs::PrivacySettings{false, true}));
+        QCOMPARE(app.config().privacy, (klinker::PrivacySettings{false, true}));
         app.openSettings();
         QTRY_VERIFY(app.settingsDialog());
         settingsCheck(app, u"unwrapRedirectsCheck"_s)->setChecked(false);
         QVERIFY(app.settingsDialog()->apply());
-        QCOMPARE(configOnDisk(box.configPath).privacy, kbs::PrivacySettings());
+        QCOMPARE(configOnDisk(box.configPath).privacy, klinker::PrivacySettings());
     }
 
     // Nothing is left to apply after Reload from Disk, but OK still takes the
@@ -1106,13 +1125,13 @@ private Q_SLOTS:
         QVERIFY(!buttons->button(QDialogButtonBox::Apply)->isEnabled());
         buttons->button(QDialogButtonBox::Ok)->click();
         QTRY_VERIFY(!app.settingsDialog());
-        QCOMPARE(app.config().privacy, (kbs::PrivacySettings{false, true}));
+        QCOMPARE(app.config().privacy, (klinker::PrivacySettings{false, true}));
 
         app.openSettings();
         QTRY_VERIFY(app.settingsDialog());
         settingsCheck(app, u"stripTrackingCheck"_s)->setChecked(true);
         QVERIFY(app.settingsDialog()->apply());
-        QCOMPARE(configOnDisk(box.configPath).privacy, (kbs::PrivacySettings{true, true}));
+        QCOMPARE(configOnDisk(box.configPath).privacy, (klinker::PrivacySettings{true, true}));
     }
 
     // Chooser preferences
@@ -1122,7 +1141,7 @@ private Q_SLOTS:
         Sandbox box;
         Config config;
         config.browsers = {box.capture(u"a"_s, u"Alpha"_s), box.capture(u"b"_s, u"Beta"_s)};
-        config.chooser = {kbs::ChooserStyle::Horizontal, 64, false, false};
+        config.chooser = {klinker::ChooserStyle::Horizontal, 64, false, false};
         box.writeConfig(config);
         Application app(box.options());
         app.openUrls({u"https://kde.org/"_s});
@@ -1131,7 +1150,7 @@ private Q_SLOTS:
         QCOMPARE(chooserList(app)->flow(), QListView::LeftToRight);
         // Placed at its preferred size for the screen (the offscreen screen has
         // no name, so placement does not move it; see test_placement).
-        const QSize maximum = kbs::maximumSize(app.chooser()->screen()->availableGeometry(), 8);
+        const QSize maximum = klinker::maximumSize(app.chooser()->screen()->availableGeometry(), 8);
         QCOMPARE(app.chooser()->size(), app.chooser()->preferredSize(maximum));
         QVERIFY(app.chooser()->width() > app.chooser()->preferredSize(maximum).height());
         QSignalSpy launched(&app, &Application::launched);
@@ -1154,16 +1173,16 @@ private Q_SLOTS:
     void horizontalChooserFitsItsBrowsers()
     {
         QFETCH(QString, style);
-        if (!kbs::test::hasStyle(style)) {
+        if (!klinker::test::hasStyle(style)) {
             QSKIP("style not installed");
         }
-        kbs::test::ThemeScope theme(style, true);
+        klinker::test::ThemeScope theme(style, true);
         Sandbox box;
         Config config;
         for (const QString &name : {u"ChatGPT"_s, u"Chromium"_s, u"Falkon"_s, u"Firefox"_s, u"LibreWolf"_s, u"Switchyard"_s}) {
             config.browsers.append(box.capture(name.toLower(), name));
         }
-        config.chooser = {kbs::ChooserStyle::Horizontal, 48, true, true};
+        config.chooser = {klinker::ChooserStyle::Horizontal, 48, true, true};
         box.writeConfig(config);
         Application app(box.options(true));
         QSignalSpy finished(&app, &Application::finished);
@@ -1171,11 +1190,11 @@ private Q_SLOTS:
         QTRY_VERIFY(app.chooser() && app.chooser()->isVisible());
         ChooserWindow *chooser = app.chooser();
         QListView *list = chooserList(app);
-        kbs::test::saveScreenshot(chooser, u"controller-horizontal-reported-six-%1"_s.arg(style.toLower()));
-        const QSize maximum = kbs::maximumSize(chooser->screen()->availableGeometry(), 8);
+        klinker::test::saveScreenshot(chooser, u"controller-horizontal-reported-six-%1"_s.arg(style.toLower()));
+        const QSize maximum = klinker::maximumSize(chooser->screen()->availableGeometry(), 8);
         QCOMPARE(chooser->size(), chooser->preferredSize(maximum));
         QVERIFY(chooser->width() < maximum.width());
-        const QString problem = kbs::test::horizontalStripProblem(list);
+        const QString problem = klinker::test::horizontalStripProblem(list);
         QVERIFY2(problem.isEmpty(), qPrintable(problem));
         const QRect tile = list->visualRect(list->model()->index(0, 0));
         QCOMPARE(list->width(), 6 * tile.width() + 2 * list->frameWidth());
@@ -1198,10 +1217,10 @@ private Q_SLOTS:
     void savedAppearanceAppliesWhenTheChooserReturns()
     {
         QFETCH(QString, widgetStyle);
-        if (!kbs::test::hasStyle(widgetStyle)) {
+        if (!klinker::test::hasStyle(widgetStyle)) {
             QSKIP("style not installed");
         }
-        kbs::test::ThemeScope theme(widgetStyle);
+        klinker::test::ThemeScope theme(widgetStyle);
         Sandbox box;
         Config config;
         config.browsers = {box.capture(u"a"_s, u"Alpha"_s), box.capture(u"b"_s, u"Beta"_s), box.capture(u"c"_s, u"Gamma"_s)};
@@ -1222,13 +1241,13 @@ private Q_SLOTS:
 
         QTRY_VERIFY(app.chooser() && app.chooser()->isVisible() && !app.settingsDialog());
         QCOMPARE(app.chooser(), chooser.data()); // the same link, the same window
-        QCOMPARE(chooser->preferences(), (kbs::ChooserSettings{kbs::ChooserStyle::Horizontal, 96, true, false}));
+        QCOMPARE(chooser->preferences(), (klinker::ChooserSettings{klinker::ChooserStyle::Horizontal, 96, true, false}));
         QCOMPARE(chooserList(app)->flow(), QListView::LeftToRight);
         // Refitted on the screen it was on.
         QCOMPARE(chooser->screen(), screen);
-        QCOMPARE(chooser->size(), chooser->preferredSize(kbs::maximumSize(screen->availableGeometry(), 8)));
+        QCOMPARE(chooser->size(), chooser->preferredSize(klinker::maximumSize(screen->availableGeometry(), 8)));
         QVERIFY(screen->availableGeometry().adjusted(8, 8, -8, -8).contains(chooser->geometry()));
-        const QString problem = kbs::test::horizontalStripProblem(chooserList(app));
+        const QString problem = klinker::test::horizontalStripProblem(chooserList(app));
         QVERIFY2(problem.isEmpty(), qPrintable(problem));
         QVERIFY(!chooserList(app)->horizontalScrollBar()->isVisible());
         QSignalSpy launched(&app, &Application::launched);
@@ -1248,7 +1267,7 @@ private Q_SLOTS:
         Application app(box.options());
         app.openUrls({u"https://kde.org/"_s});
         QTRY_VERIFY(app.chooser() && app.chooser()->isActiveWindow());
-        kbs::test::focusOtherApplication();
+        klinker::test::focusOtherApplication();
         QTest::qWait(ChooserWindow::FocusLossDelayMs + 200);
         QVERIFY(app.chooser() && app.chooser()->isVisible());
         QSignalSpy launched(&app, &Application::launched);
@@ -1270,7 +1289,7 @@ private Q_SLOTS:
         app.openUrls({u"https://one.example/"_s, u"https://two.example/"_s});
         QTRY_VERIFY(app.chooser() && app.chooser()->isActiveWindow());
         QCOMPARE(app.chooser()->finalUrl(), u"https://one.example/"_s);
-        kbs::test::focusOtherApplication();
+        klinker::test::focusOtherApplication();
         QTRY_VERIFY(app.chooser() && app.chooser()->finalUrl() == u"https://two.example/"_s);
         // The next chooser has the focus of its own and stays.
         QTRY_VERIFY(app.chooser()->isActiveWindow());
@@ -1306,7 +1325,7 @@ private Q_SLOTS:
         QPointer<ChooserWindow> chooser = app.chooser();
         QSignalSpy cancelled(chooser.data(), &ChooserWindow::cancelled);
 
-        kbs::test::focusOtherApplication();
+        klinker::test::focusOtherApplication();
         QTRY_COMPARE(finished.size(), 1);
         QCOMPARE(cancelled.size(), 1);
         QTRY_VERIFY(!chooser);
@@ -1335,7 +1354,7 @@ private Q_SLOTS:
         QPointer<ChooserWindow> chooser = app.chooser();
         QSignalSpy cancelled(chooser.data(), &ChooserWindow::cancelled);
 
-        kbs::test::focusOtherApplication();
+        klinker::test::focusOtherApplication();
         QVERIFY(chooser->isFocusLossPending());
         server.release("/slow");
         // Ready well within the delay: held back, the chooser still busy.
@@ -1367,7 +1386,7 @@ private Q_SLOTS:
         QSignalSpy cancelled(chooser.data(), &ChooserWindow::cancelled);
         QSignalSpy resolved(chooser.data(), &ChooserWindow::focusLossResolved);
 
-        kbs::test::focusOtherApplication();
+        klinker::test::focusOtherApplication();
         QVERIFY(chooser->isFocusLossPending());
         server.release("/slow");
         // Ready well within the delay: held back, the chooser still busy.
@@ -1376,7 +1395,7 @@ private Q_SLOTS:
         QCOMPARE(launched.size(), 0);
         QVERIFY(chooser && chooser->isVisible());
 
-        kbs::test::focusWindow(chooser);
+        klinker::test::focusWindow(chooser);
         QCOMPARE(resolved.size(), 1);
         QTRY_COMPARE(finished.size(), 1);
         QCOMPARE(launched.size(), 1);
@@ -1406,7 +1425,7 @@ private Q_SLOTS:
         QSignalSpy cancelled(chooser.data(), &ChooserWindow::cancelled);
         QSignalSpy resolved(chooser.data(), &ChooserWindow::focusLossResolved);
 
-        kbs::test::focusOtherApplication();
+        klinker::test::focusOtherApplication();
         QVERIFY(chooser->isFocusLossPending());
         server.release("/slow");
         // Ready well within the delay: held back, the chooser still busy.
@@ -1449,7 +1468,7 @@ private Q_SLOTS:
         QTRY_VERIFY(app.chooser() && app.chooser()->isBusy() && app.chooser()->isActiveWindow());
         QPointer<ChooserWindow> first = app.chooser();
 
-        kbs::test::focusOtherApplication();
+        klinker::test::focusOtherApplication();
         QVERIFY(first->isFocusLossPending());
         server.release("/slow");
         // Ready well within the delay: held back, the chooser still busy.
@@ -1492,9 +1511,9 @@ private Q_SLOTS:
         QTRY_VERIFY(app.settingsDialog() && app.settingsDialog()->isActiveWindow());
         settingsCheck(app, u"closeOnFocusLossCheck"_s)->setChecked(true);
         QVERIFY(app.settingsDialog()->apply());
-        kbs::test::focusOtherApplication();
+        klinker::test::focusOtherApplication();
         QTest::qWait(ChooserWindow::FocusLossDelayMs + 200);
-        kbs::test::focusWindow(app.settingsDialog());
+        klinker::test::focusWindow(app.settingsDialog());
         QTRY_VERIFY(app.settingsDialog()->isActiveWindow());
         app.settingsDialog()->reject();
 
@@ -1504,7 +1523,7 @@ private Q_SLOTS:
         QTest::qWait(ChooserWindow::FocusLossDelayMs + 200);
         QVERIFY(chooser && chooser->isVisible());
 
-        kbs::test::focusOtherApplication();
+        klinker::test::focusOtherApplication();
         QTRY_COMPARE(finished.size(), 1);
         QCOMPARE(launched.size(), 0);
     }

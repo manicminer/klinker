@@ -5,7 +5,7 @@
 #include <QSortFilterProxyModel>
 #include <QString>
 
-namespace kbs
+namespace klinker
 {
 
 struct Browser;
@@ -57,4 +57,4 @@ public:
     QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
 };
 
-} // namespace kbs
+} // namespace klinker

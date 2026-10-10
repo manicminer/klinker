@@ -22,12 +22,12 @@
 
 using namespace Qt::StringLiterals;
 
-namespace kbs::test
+namespace klinker::test
 {
 
 void isolateEnvironment()
 {
-    static QTemporaryDir root(QDir::tempPath() + u"/kbs-test-XXXXXX"_s);
+    static QTemporaryDir root(QDir::tempPath() + u"/klinker-test-XXXXXX"_s);
     const QString base = root.path();
     QDir().mkpath(base + u"/config"_s);
     QDir().mkpath(base + u"/data"_s);
@@ -186,7 +186,7 @@ QString horizontalStripProblem(const QAbstractItemView *list)
 
 QString saveScreenshot(QWidget *widget, const QString &name)
 {
-    const QString dir = qEnvironmentVariable("KBS_SCREENSHOT_DIR");
+    const QString dir = qEnvironmentVariable("KLINKER_SCREENSHOT_DIR");
     if (dir.isEmpty()) {
         return {};
     }
@@ -240,4 +240,4 @@ void focusWindow(QWidget *window)
                                                                                               Qt::ActiveWindowFocusReason);
 }
 
-} // namespace kbs::test
+} // namespace klinker::test

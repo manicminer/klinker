@@ -6,7 +6,7 @@
 
 using namespace Qt::StringLiterals;
 
-namespace kbs
+namespace klinker
 {
 
 namespace
@@ -246,12 +246,7 @@ QString formatArgumentLines(const QStringList &arguments)
 
 SelfIdentity SelfIdentity::current()
 {
-    // Before it was renamed to Klinker, this application was Browser Switcher
-    // (kde-browser-switcher); an installed copy of it would hand links back.
-    SelfIdentity self{{u"io.github.manicminer.Klinker.desktop"_s, u"klinker.desktop"_s, u"io.github.manicminer.KdeBrowserSwitcher.desktop"_s,
-                       u"kde-browser-switcher.desktop"_s},
-                      {u"klinker"_s, u"kde-browser-switcher"_s},
-                      {}};
+    SelfIdentity self{{u"io.github.manicminer.Klinker.desktop"_s, u"klinker.desktop"_s}, {u"klinker"_s}, {}};
     if (QCoreApplication::instance()) {
         self.executablePaths.append(QCoreApplication::applicationFilePath());
     }
@@ -334,4 +329,4 @@ CommandValidation validateCommand(const CommandTemplate &command, const SelfIden
     return result;
 }
 
-} // namespace kbs
+} // namespace klinker

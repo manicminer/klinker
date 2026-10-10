@@ -11,9 +11,9 @@
 #include <unistd.h>
 
 using namespace Qt::StringLiterals;
-using namespace kbs;
+using namespace klinker;
 
-Q_DECLARE_METATYPE(kbs::Config)
+Q_DECLARE_METATYPE(klinker::Config)
 
 namespace
 {
@@ -63,16 +63,16 @@ QByteArray readFile(const QString &path)
     return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
 }
 
-// The current and the pre-rename configuration file in one temporary
-// $XDG_CONFIG_HOME.
+// A temporary $XDG_CONFIG_HOME with the configuration file and, next to it,
+// the file of an unrelated application.
 struct Locations {
     QTemporaryDir dir;
     QString current = dir.filePath(u"klinker/config.json"_s);
-    QString legacy = dir.filePath(u"kde-browser-switcher/config.json"_s);
+    QString sibling = dir.filePath(u"other-app/config.json"_s);
 
     ConfigStore store() const
     {
-        return ConfigStore(current, legacy);
+        return ConfigStore(current);
     }
 
     static bool write(const QString &path, const QByteArray &content)
@@ -134,7 +134,7 @@ private Q_SLOTS:
 
     void documentedExampleParses()
     {
-        QFile doc(QStringLiteral(KBS_SOURCE_DIR "/docs/configuration.md"));
+        QFile doc(QStringLiteral(KLINKER_SOURCE_DIR "/docs/configuration.md"));
         QVERIFY(doc.open(QIODevice::ReadOnly));
         const QByteArray markdown = doc.readAll();
         const qsizetype begin = markdown.indexOf("```json\n");
@@ -289,67 +289,43 @@ private Q_SLOTS:
     void defaultPathFollowsXdg()
     {
         const QByteArray old = qgetenv("XDG_CONFIG_HOME");
-        qputenv("XDG_CONFIG_HOME", "/tmp/kbs-xdg-config");
-        QCOMPARE(ConfigStore::defaultPath(), u"/tmp/kbs-xdg-config/klinker/config.json"_s);
-        QCOMPARE(ConfigStore::legacyDefaultPath(), u"/tmp/kbs-xdg-config/kde-browser-switcher/config.json"_s);
+        qputenv("XDG_CONFIG_HOME", "/tmp/klinker-xdg-config");
+        QCOMPARE(ConfigStore::defaultPath(), u"/tmp/klinker-xdg-config/klinker/config.json"_s);
         old.isNull() ? qunsetenv("XDG_CONFIG_HOME") : qputenv("XDG_CONFIG_HOME", old);
     }
 
-    // Legacy configuration of Browser Switcher, before the rename to Klinker
+    // Only the given file is read or written
 
-    void legacyFileIsReadWithoutWriting()
+    void missingFileGivesDefaultsAndIgnoresSiblings()
     {
         Locations l;
-        const QByteArray legacy = configToJson(sampleConfig());
-        QVERIFY(Locations::write(l.legacy, legacy));
+        const QByteArray sibling = configToJson(sampleConfig());
+        QVERIFY(Locations::write(l.sibling, sibling));
         ConfigStore store = l.store();
         const auto loaded = store.load();
-        QCOMPARE(loaded.status, ConfigStore::LoadStatus::Loaded);
-        QCOMPARE(loaded.config, sampleConfig());
-        QCOMPARE(store.path(), l.current);
-        QCOMPARE(store.sourcePath(), l.legacy);
+        QCOMPARE(loaded.status, ConfigStore::LoadStatus::Missing);
+        QCOMPARE(loaded.config, Config());
+        QVERIFY(loaded.error.isEmpty());
         QVERIFY(!QFileInfo::exists(QFileInfo(l.current).absolutePath()));
-        QCOMPARE(readFile(l.legacy), legacy);
+
+        // The first save creates the file; the other application's stays as it is.
+        QVERIFY(store.save(otherConfig()).ok);
+        QCOMPARE(configFromJson(readFile(l.current)).config, otherConfig());
+        QCOMPARE(readFile(l.sibling), sibling);
+        QCOMPARE(QDir(QFileInfo(l.sibling).absolutePath()).entryList(QDir::Files | QDir::Hidden), QStringList{u"config.json"_s});
     }
 
-    void firstSaveImportsIntoTheNewLocation()
-    {
-        Locations l;
-        const QByteArray legacy = configToJson(sampleConfig());
-        QVERIFY(Locations::write(l.legacy, legacy));
-        ConfigStore store = l.store();
-        QCOMPARE(store.load().config, sampleConfig());
-
-        Config changed = sampleConfig();
-        changed.chooser.iconSize = 64;
-        const auto saved = store.save(changed);
-        QVERIFY2(saved.ok, qPrintable(saved.error));
-        QCOMPARE(configFromJson(readFile(l.current)).config, changed);
-        QCOMPARE(readFile(l.legacy), legacy);
-        QCOMPARE(QDir(QFileInfo(l.legacy).absolutePath()).entryList(QDir::Files | QDir::Hidden), QStringList{u"config.json"_s});
-        QCOMPARE(QDir(QFileInfo(l.current).absolutePath()).entryList(QDir::Files | QDir::Hidden), QStringList{u"config.json"_s});
-        QCOMPARE(store.sourcePath(), l.current);
-
-        // From now on only the new file counts.
-        QVERIFY(writeFile(l.legacy, configToJson(otherConfig())));
-        QVERIFY(store.save(sampleConfig()).ok);
-        ConfigStore later = l.store();
-        QCOMPARE(later.load().config, sampleConfig());
-        QCOMPARE(later.sourcePath(), l.current);
-    }
-
-    void newLocationWinsOverLegacy()
+    void existingFileIsReadAndSiblingsIgnored()
     {
         Locations l;
         QVERIFY(Locations::write(l.current, configToJson(otherConfig())));
-        const QByteArray legacy = configToJson(sampleConfig());
-        QVERIFY(Locations::write(l.legacy, legacy));
+        const QByteArray sibling = configToJson(sampleConfig());
+        QVERIFY(Locations::write(l.sibling, sibling));
         ConfigStore store = l.store();
         QCOMPARE(store.load().config, otherConfig());
-        QCOMPARE(store.sourcePath(), l.current);
         QVERIFY(store.save(Config()).ok);
         QCOMPARE(configFromJson(readFile(l.current)).config, Config());
-        QCOMPARE(readFile(l.legacy), legacy);
+        QCOMPARE(readFile(l.sibling), sibling);
     }
 
     void noFileAtAllGivesDefaults()
@@ -357,113 +333,104 @@ private Q_SLOTS:
         Locations l;
         ConfigStore store = l.store();
         QCOMPARE(store.load().status, ConfigStore::LoadStatus::Missing);
-        QCOMPARE(store.sourcePath(), l.current);
+        QCOMPARE(store.path(), l.current);
         QVERIFY(store.save(sampleConfig()).ok);
-        QVERIFY(!QFile::exists(l.legacy));
+        QCOMPARE(QDir(l.dir.path()).entryList(QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden), QStringList{u"klinker"_s});
         QCOMPARE(configFromJson(readFile(l.current)).config, sampleConfig());
     }
 
-    void malformedLegacyIsNeverImported()
+    void malformedSiblingIsIgnored()
     {
         Locations l;
-        QVERIFY(Locations::write(l.legacy, "{ broken"));
+        QVERIFY(Locations::write(l.sibling, "{ broken"));
         ConfigStore store = l.store();
         const auto loaded = store.load();
-        QCOMPARE(loaded.status, ConfigStore::LoadStatus::Invalid);
-        QVERIFY2(loaded.error.contains(l.legacy), qPrintable(loaded.error));
-        QCOMPARE(loaded.config, Config());
-        QVERIFY(!store.save(sampleConfig()).ok);
-        QVERIFY(!QFile::exists(l.current));
-        QCOMPARE(readFile(l.legacy), QByteArray("{ broken"));
+        QCOMPARE(loaded.status, ConfigStore::LoadStatus::Missing);
+        QVERIFY(loaded.error.isEmpty());
+        QVERIFY(store.save(sampleConfig()).ok);
+        QCOMPARE(configFromJson(readFile(l.current)).config, sampleConfig());
+        QCOMPARE(readFile(l.sibling), QByteArray("{ broken"));
     }
 
-    void explicitPathNeverFallsBack()
+    void changedSiblingDoesNotBlockSaving()
     {
         Locations l;
-        const QByteArray legacy = configToJson(sampleConfig());
-        QVERIFY(Locations::write(l.legacy, legacy));
-        ConfigStore store(l.current);
+        ConfigStore store = l.store();
         QCOMPARE(store.load().status, ConfigStore::LoadStatus::Missing);
-        QCOMPARE(store.sourcePath(), l.current);
+        QVERIFY(Locations::write(l.sibling, configToJson(otherConfig())));
+        QVERIFY(store.save(sampleConfig()).ok);
+        QVERIFY(Locations::write(l.sibling, "{ broken"));
         QVERIFY(store.save(otherConfig()).ok);
         QCOMPARE(configFromJson(readFile(l.current)).config, otherConfig());
-        QCOMPARE(readFile(l.legacy), legacy);
     }
 
-    void changesSinceLoadingBlockTheImport_data()
+    void explicitPathIsUsedAsGiven()
     {
-        QTest::addColumn<bool>("legacyAtLoad");
+        // As with --config FILE: the default location is neither read nor written.
+        Locations l;
+        const QByteArray atDefault = configToJson(sampleConfig());
+        QVERIFY(Locations::write(l.current, atDefault));
+        const QString path = l.dir.filePath(u"elsewhere/settings.json"_s);
+        ConfigStore store(path);
+        QCOMPARE(store.path(), path);
+        QCOMPARE(store.load().status, ConfigStore::LoadStatus::Missing);
+        QVERIFY(store.save(otherConfig()).ok);
+        QCOMPARE(configFromJson(readFile(path)).config, otherConfig());
+        QCOMPARE(readFile(l.current), atDefault);
+        QCOMPARE(ConfigStore(path).load().config, otherConfig());
+    }
+
+    void changesSinceLoadingBlockSaving_data()
+    {
+        QTest::addColumn<bool>("existsAtLoad");
         QTest::addColumn<QString>("change");
-        QTest::newRow("legacy edited") << true << u"edit legacy"_s;
-        QTest::newRow("legacy made malformed") << true << u"break legacy"_s;
-        QTest::newRow("legacy deleted") << true << u"delete legacy"_s;
-        QTest::newRow("new file created after legacy load") << true << u"create new"_s;
-        QTest::newRow("legacy created after empty load") << false << u"create legacy"_s;
-        QTest::newRow("new file created after empty load") << false << u"create new"_s;
+        QTest::newRow("edited") << true << u"edit"_s;
+        QTest::newRow("made malformed") << true << u"break"_s;
+        QTest::newRow("deleted") << true << u"delete"_s;
+        QTest::newRow("created after empty load") << false << u"edit"_s;
     }
 
-    void changesSinceLoadingBlockTheImport()
+    void changesSinceLoadingBlockSaving()
     {
-        QFETCH(bool, legacyAtLoad);
+        QFETCH(bool, existsAtLoad);
         QFETCH(QString, change);
         Locations l;
-        if (legacyAtLoad) {
-            QVERIFY(Locations::write(l.legacy, configToJson(sampleConfig())));
+        if (existsAtLoad) {
+            QVERIFY(Locations::write(l.current, configToJson(sampleConfig())));
         }
         ConfigStore store = l.store();
         store.load();
 
-        const QByteArray other = configToJson(otherConfig());
-        if (change == u"edit legacy"_s || change == u"create legacy"_s) {
-            QVERIFY(Locations::write(l.legacy, other));
-        } else if (change == u"break legacy"_s) {
-            QVERIFY(Locations::write(l.legacy, "{ broken"));
-        } else if (change == u"delete legacy"_s) {
-            QVERIFY(QFile::remove(l.legacy));
+        if (change == u"edit"_s) {
+            QVERIFY(Locations::write(l.current, configToJson(otherConfig())));
+        } else if (change == u"break"_s) {
+            QVERIFY(Locations::write(l.current, "{ broken"));
         } else {
-            QVERIFY(Locations::write(l.current, other));
+            QVERIFY(QFile::remove(l.current));
         }
-        const QByteArray currentBefore = readFile(l.current);
-        const QByteArray legacyBefore = readFile(l.legacy);
+        const bool existsBefore = QFile::exists(l.current);
+        const QByteArray before = readFile(l.current);
 
         Config mine = sampleConfig();
         mine.chooser.closeOnFocusLoss = true;
         const auto saved = store.save(mine);
         QVERIFY(!saved.ok);
         QVERIFY2(saved.error.contains(u"changed"_s) || saved.error.contains(u"not a valid"_s), qPrintable(saved.error));
-        QCOMPARE(readFile(l.current), currentBefore);
-        QCOMPARE(QFile::exists(l.current), change == u"create new"_s);
-        QCOMPARE(readFile(l.legacy), legacyBefore);
+        QCOMPARE(QFile::exists(l.current), existsBefore);
+        QCOMPARE(readFile(l.current), before);
 
         // Loading again picks up the change, after which saving works.
-        if (change != u"break legacy"_s) {
+        if (change != u"break"_s) {
             store.load();
             QVERIFY(store.save(mine).ok);
             QCOMPARE(configFromJson(readFile(l.current)).config, mine);
-            QCOMPARE(readFile(l.legacy), legacyBefore);
         }
-    }
-
-    void unreadableLegacyIsInvalid()
-    {
-        if (geteuid() == 0) {
-            QSKIP("Permission checks do not apply to root");
-        }
-        Locations l;
-        QVERIFY(Locations::write(l.legacy, configToJson(sampleConfig())));
-        QVERIFY(QFile::setPermissions(l.legacy, QFileDevice::WriteOwner));
-        ConfigStore store = l.store();
-        QCOMPARE(store.load().status, ConfigStore::LoadStatus::Invalid);
-        QVERIFY(!store.save(Config()).ok);
-        QVERIFY(!QFile::exists(l.current));
-        QFile::setPermissions(l.legacy, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
-        QCOMPARE(readFile(l.legacy), configToJson(sampleConfig()));
     }
 
     void storeMissingThenSaveAndLoad()
     {
         QTemporaryDir dir;
-        const QString path = dir.filePath(u"nested/kde-browser-switcher/config.json"_s);
+        const QString path = dir.filePath(u"nested/klinker/config.json"_s);
         ConfigStore store(path);
         const auto loaded = store.load();
         QCOMPARE(loaded.status, ConfigStore::LoadStatus::Missing);

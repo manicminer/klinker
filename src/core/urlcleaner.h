@@ -3,7 +3,7 @@
 #include <QString>
 #include <QStringView>
 
-namespace kbs
+namespace klinker
 {
 
 struct UrlCleanResult {
@@ -20,4 +20,4 @@ bool isTrackingParameter(QStringView decodedName);
 // The '?' is dropped only when the query held nothing but tracking parameters.
 UrlCleanResult stripTrackingParameters(const QString &url);
 
-} // namespace kbs
+} // namespace klinker

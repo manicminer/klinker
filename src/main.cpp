@@ -16,7 +16,7 @@ namespace
 void setApplicationMetadata()
 {
     QCoreApplication::setApplicationName(u"klinker"_s);
-    QCoreApplication::setApplicationVersion(QStringLiteral(KBS_VERSION));
+    QCoreApplication::setApplicationVersion(QStringLiteral(KLINKER_VERSION));
     QCoreApplication::setOrganizationDomain(u"manicminer.github.io"_s);
 }
 
@@ -34,21 +34,21 @@ int main(int argc, char **argv)
     // Decode argv ourselves so that links with invalid UTF-8 are not altered.
     QStringList arguments;
     for (int i = 0; i < argc; ++i) {
-        arguments.append(kbs::decodeArgument(QByteArray(argv[i])));
+        arguments.append(klinker::decodeArgument(QByteArray(argv[i])));
     }
-    kbs::CommandLine commandLine = kbs::parseCommandLine(arguments);
+    klinker::CommandLine commandLine = klinker::parseCommandLine(arguments);
 
-    if (commandLine.action != kbs::CommandLine::Action::Run) {
+    if (commandLine.action != klinker::CommandLine::Action::Run) {
         // No display is needed to print help or errors.
         QCoreApplication core(argc, argv);
         setApplicationMetadata();
-        commandLine = kbs::parseCommandLine(arguments);
+        commandLine = klinker::parseCommandLine(arguments);
         switch (commandLine.action) {
-        case kbs::CommandLine::Action::ShowHelp:
+        case klinker::CommandLine::Action::ShowHelp:
             print(stdout, commandLine.helpText);
             return 0;
-        case kbs::CommandLine::Action::ShowVersion:
-            print(stdout, u"klinker %1\n"_s.arg(QStringLiteral(KBS_VERSION)));
+        case klinker::CommandLine::Action::ShowVersion:
+            print(stdout, u"klinker %1\n"_s.arg(QStringLiteral(KLINKER_VERSION)));
             return 0;
         default:
             print(stderr, u"klinker: %1\nTry “klinker --help”.\n"_s.arg(commandLine.error));
@@ -60,16 +60,16 @@ int main(int argc, char **argv)
     KIconTheme::initTheme();
     QApplication app(argc, argv);
     setApplicationMetadata();
-    QGuiApplication::setApplicationDisplayName(kbs::AppDisplayName.toString());
-    QGuiApplication::setDesktopFileName(kbs::AppId.toString());
-    QApplication::setWindowIcon(kbs::appIcon());
+    QGuiApplication::setApplicationDisplayName(klinker::AppDisplayName.toString());
+    QGuiApplication::setDesktopFileName(klinker::AppId.toString());
+    QApplication::setWindowIcon(klinker::appIcon());
     QApplication::setQuitOnLastWindowClosed(false);
 
-    kbs::Application::Options options;
+    klinker::Application::Options options;
     options.configPath = commandLine.configPath;
     options.alwaysChoose = commandLine.choose;
-    kbs::Application controller(options);
-    QObject::connect(&controller, &kbs::Application::finished, &app, &QCoreApplication::quit, Qt::QueuedConnection);
+    klinker::Application controller(options);
+    QObject::connect(&controller, &klinker::Application::finished, &app, &QCoreApplication::quit, Qt::QueuedConnection);
 
     if (commandLine.settings) {
         controller.openSettings();

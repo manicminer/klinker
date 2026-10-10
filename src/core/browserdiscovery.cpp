@@ -11,7 +11,7 @@
 
 using namespace Qt::StringLiterals;
 
-namespace kbs
+namespace klinker
 {
 
 namespace
@@ -159,4 +159,4 @@ DiscoveryResult discoverBrowsers(const QStringList &dataDirs, const SelfIdentity
     return result;
 }
 
-} // namespace kbs
+} // namespace klinker

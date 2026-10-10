@@ -8,7 +8,7 @@
 class QAbstractItemView;
 class QWidget;
 
-namespace kbs::test
+namespace klinker::test
 {
 
 // Points XDG_CONFIG_HOME, XDG_DATA_HOME and XDG_DATA_DIRS at an empty private
@@ -52,7 +52,7 @@ public:
 // the scroll bar below the viewport rather than over the tiles.
 QString horizontalStripProblem(const QAbstractItemView *list);
 
-// Saves widget->grab() as <KBS_SCREENSHOT_DIR>/<name>.png when the variable
+// Saves widget->grab() as <KLINKER_SCREENSHOT_DIR>/<name>.png when the variable
 // is set; returns the file name or an empty string.
 QString saveScreenshot(QWidget *widget, const QString &name);
 
@@ -71,4 +71,4 @@ void focusOtherApplication();
 // Reports that the window has the keyboard focus again.
 void focusWindow(QWidget *window);
 
-} // namespace kbs::test
+} // namespace klinker::test

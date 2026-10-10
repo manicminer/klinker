@@ -6,7 +6,7 @@
 
 using namespace Qt::StringLiterals;
 
-namespace kbs
+namespace klinker
 {
 
 namespace
@@ -250,4 +250,4 @@ void BrowserCatalog::materializeOrder()
     }
 }
 
-} // namespace kbs
+} // namespace klinker

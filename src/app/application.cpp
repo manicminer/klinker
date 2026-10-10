@@ -12,7 +12,7 @@
 
 using namespace Qt::StringLiterals;
 
-namespace kbs
+namespace klinker
 {
 
 SelfIdentity appSelfIdentity()
@@ -27,9 +27,7 @@ SelfIdentity appSelfIdentity()
 Application::Application(const Options &options, QObject *parent)
     : QObject(parent)
     , m_options(options)
-    // Only the default location falls back to the file of Browser Switcher.
-    , m_store(std::make_unique<ConfigStore>(options.configPath.isEmpty() ? ConfigStore(ConfigStore::defaultPath(), ConfigStore::legacyDefaultPath())
-                                                                         : ConfigStore(options.configPath)))
+    , m_store(std::make_unique<ConfigStore>(options.configPath.isEmpty() ? ConfigStore::defaultPath() : options.configPath))
 {
     const ConfigStore::LoadResult loaded = m_store->load();
     m_config = loaded.config;
@@ -37,7 +35,7 @@ Application::Application(const Options &options, QObject *parent)
         m_loadError = loaded.error;
     }
     for (const QString &warning : loaded.warnings) {
-        qWarning().noquote() << m_store->sourcePath() << warning;
+        qWarning().noquote() << m_store->path() << warning;
     }
     m_detected = discoverBrowsers(m_options.dataDirs.value_or(defaultDataDirs()), m_options.self).browsers;
     m_catalog = BrowserCatalog(m_detected, m_config.browsers);
@@ -206,11 +204,11 @@ void Application::showChooser(const QString &error)
     if (m_settings || m_chooser->isVisible()) {
         return; // shown again when the settings close
     }
-    if (!m_chooser->property("kbsPlaced").toBool()) {
+    if (!m_chooser->property("klinkerPlaced").toBool()) {
         placePopup(m_chooser, [chooser = m_chooser.data()](const QSize &maximum) {
             return chooser->preferredSize(maximum);
         });
-        m_chooser->setProperty("kbsPlaced", true);
+        m_chooser->setProperty("klinkerPlaced", true);
     } else {
         // Back from the settings, perhaps in another style or with other
         // browsers: sized again on the screen it was on.
@@ -345,4 +343,4 @@ void Application::checkFinished()
     }
 }
 
-} // namespace kbs
+} // namespace klinker

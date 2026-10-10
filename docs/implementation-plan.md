@@ -1,9 +1,4 @@
-# kde-browser-switcher — implementation plan
-
-> Historical: written when the application was called kde-browser-switcher.
-> It is now Klinker (`klinker`, `io.github.manicminer.Klinker`); its
-> configuration moved to `$XDG_CONFIG_HOME/klinker/config.json`, reading the
-> old file until the first save (see [configuration.md](configuration.md)).
+# Klinker — implementation plan
 
 A native KDE Plasma URL handler: when a link is opened, either route it to a
 browser by rule or show a chooser. Inspired in functionality (not code or
@@ -15,7 +10,7 @@ or modify the user's desktop configuration.
 
 ## Milestones
 
-1. **Foundation (this milestone)** — static library `kbs_core` with no GUI or
+1. **Foundation (this milestone)** — static library `klinker_core` with no GUI or
    networking:
    - `urlcleaner` — opt-in removal of known tracking query parameters, operating
      on the raw URL string so every other octet is preserved.
@@ -109,7 +104,7 @@ or modify the user's desktop configuration.
   Removing a detected browser leaves a `removed` tombstone so a rescan does
   not bring it back; removing a manual browser deletes it. Newly detected
   browsers are appended after the configured order, sorted by name.
-- **Config** lives at `$XDG_CONFIG_HOME/kde-browser-switcher/config.json`
+- **Config** lives at `$XDG_CONFIG_HOME/klinker/config.json`
   (schema in [configuration.md](configuration.md)). Saving takes a lock file,
   refuses to write a configuration that loading would reject (the existing
   file is kept), refuses to replace a file that is malformed or changed since

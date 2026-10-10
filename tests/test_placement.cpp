@@ -3,10 +3,10 @@
 #include <QTest>
 
 using namespace Qt::StringLiterals;
-using kbs::Placement;
-using kbs::PlacementMode;
-using kbs::PlacementRequest;
-using kbs::ScreenInfo;
+using klinker::Placement;
+using klinker::PlacementMode;
+using klinker::PlacementRequest;
+using klinker::ScreenInfo;
 
 namespace
 {
@@ -52,11 +52,11 @@ class TestPlacement : public QObject
 private Q_SLOTS:
     void cursorInTheMiddleAnchorsTheCard()
     {
-        const Placement p = kbs::planPlacement(request(Card, QPoint(1000, 800), twoScreens()));
+        const Placement p = klinker::planPlacement(request(Card, QPoint(1000, 800), twoScreens()));
         QCOMPARE(p.mode, PlacementMode::NearCursor);
         QCOMPARE(p.screenName, u"DP-9"_s);
         QCOMPARE(p.geometry.size(), Card);
-        QCOMPARE(p.geometry.topLeft(), QPoint(1000 - Card.width() / 2, 800 - kbs::CursorOffsetY));
+        QCOMPARE(p.geometry.topLeft(), QPoint(1000 - Card.width() / 2, 800 - klinker::CursorOffsetY));
     }
 
     void clampsToEveryEdge_data()
@@ -75,7 +75,7 @@ private Q_SLOTS:
     {
         QFETCH(QPoint, cursor);
         QFETCH(QPoint, expectedTopLeft);
-        const Placement p = kbs::planPlacement(request(Card, cursor, twoScreens()));
+        const Placement p = klinker::planPlacement(request(Card, cursor, twoScreens()));
         QCOMPARE(p.screenName, u"eDP-1"_s);
         QCOMPARE(p.geometry.topLeft(), expectedTopLeft);
         QVERIFY(twoScreens().at(1).available.contains(p.geometry));
@@ -84,12 +84,12 @@ private Q_SLOTS:
     void negativeOriginsStayOnTheirScreen()
     {
         const auto screens = negativeOrigin();
-        const Placement topLeft = kbs::planPlacement(request(Card, QPoint(-1920, -300), screens));
+        const Placement topLeft = klinker::planPlacement(request(Card, QPoint(-1920, -300), screens));
         QCOMPARE(topLeft.screenName, u"HDMI-1"_s);
         QCOMPARE(topLeft.geometry.topLeft(), QPoint(-1912, -292));
 
         // Just left of the shared edge: must not spill onto DP-1.
-        const Placement edge = kbs::planPlacement(request(Card, QPoint(-1, 100), screens));
+        const Placement edge = klinker::planPlacement(request(Card, QPoint(-1, 100), screens));
         QCOMPARE(edge.screenName, u"HDMI-1"_s);
         QCOMPARE(edge.geometry.right(), -1 - 8);
         QVERIFY(screens.at(0).available.contains(edge.geometry));
@@ -97,7 +97,7 @@ private Q_SLOTS:
 
     void originIsAValidCursorPosition()
     {
-        const Placement p = kbs::planPlacement(request(Card, QPoint(0, 0), negativeOrigin()));
+        const Placement p = klinker::planPlacement(request(Card, QPoint(0, 0), negativeOrigin()));
         QCOMPARE(p.mode, PlacementMode::NearCursor);
         QCOMPARE(p.screenName, u"DP-1"_s);
         QCOMPARE(p.geometry.topLeft(), QPoint(8, 8));
@@ -107,7 +107,7 @@ private Q_SLOTS:
     {
         PlacementRequest r = request(Card, std::nullopt, twoScreens());
         r.activeOutput = u"eDP-1"_s;
-        const Placement p = kbs::planPlacement(r);
+        const Placement p = klinker::planPlacement(r);
         QCOMPARE(p.mode, PlacementMode::Centered);
         QCOMPARE(p.screenName, u"eDP-1"_s);
         QCOMPARE(p.geometry, QRect(QPoint(3840 + (2560 - 430) / 2, 473 + (1556 - 360) / 2), Card));
@@ -118,10 +118,10 @@ private Q_SLOTS:
         PlacementRequest r = request(Card, std::nullopt, twoScreens());
         r.activeOutput = u"HDMI-7"_s; // stale or unknown name
         r.primaryOutput = u"eDP-1"_s;
-        QCOMPARE(kbs::planPlacement(r).screenName, u"eDP-1"_s);
+        QCOMPARE(klinker::planPlacement(r).screenName, u"eDP-1"_s);
 
         r.primaryOutput.clear();
-        QCOMPARE(kbs::planPlacement(r).screenName, u"DP-9"_s);
+        QCOMPARE(klinker::planPlacement(r).screenName, u"DP-9"_s);
     }
 
     void cursorInAGapBetweenScreensCentresInstead()
@@ -129,7 +129,7 @@ private Q_SLOTS:
         // eDP-1 starts at y 473, so (5000, 100) is on no screen.
         PlacementRequest r = request(Card, QPoint(5000, 100), twoScreens());
         r.activeOutput = u"eDP-1"_s;
-        const Placement p = kbs::planPlacement(r);
+        const Placement p = klinker::planPlacement(r);
         QCOMPARE(p.mode, PlacementMode::Centered);
         QCOMPARE(p.screenName, u"eDP-1"_s);
     }
@@ -137,29 +137,29 @@ private Q_SLOTS:
     void smallOutputShrinksTheCard()
     {
         const QList<ScreenInfo> tiny{{u"VIRT"_s, QRect(-100, -50, 400, 300), QRect(-100, -50, 400, 280)}};
-        const Placement nearCursor = kbs::planPlacement(request(Card, QPoint(0, 0), tiny));
+        const Placement nearCursor = klinker::planPlacement(request(Card, QPoint(0, 0), tiny));
         QCOMPARE(nearCursor.geometry, QRect(-92, -42, 384, 264));
 
-        const Placement centred = kbs::planPlacement(request(Card, std::nullopt, tiny));
+        const Placement centred = klinker::planPlacement(request(Card, std::nullopt, tiny));
         QCOMPARE(centred.geometry, QRect(-92, -42, 384, 264));
     }
 
     void outputSmallerThanTheMarginsStillGetsAWindow()
     {
         const QList<ScreenInfo> silly{{u"X"_s, QRect(0, 0, 12, 10), QRect(0, 0, 12, 10)}};
-        const Placement p = kbs::planPlacement(request(Card, QPoint(3, 3), silly));
+        const Placement p = klinker::planPlacement(request(Card, QPoint(3, 3), silly));
         QCOMPARE(p.geometry, QRect(0, 0, 12, 10));
     }
 
     void noScreensIsInvalid()
     {
-        QVERIFY(!kbs::planPlacement(request(Card, QPoint(1, 1), {})).isValid());
+        QVERIFY(!klinker::planPlacement(request(Card, QPoint(1, 1), {})).isValid());
     }
 
     void maximumSizeIsTheUsableArea()
     {
-        QCOMPARE(kbs::maximumSize(QRect(-100, -50, 400, 280), 8), QSize(384, 264));
-        QCOMPARE(kbs::maximumSize(QRect(0, 0, 12, 10), 8), QSize(12, 10));
+        QCOMPARE(klinker::maximumSize(QRect(-100, -50, 400, 280), 8), QSize(384, 264));
+        QCOMPARE(klinker::maximumSize(QRect(0, 0, 12, 10), 8), QSize(12, 10));
     }
 
     // Refitting a shown window to new content (another chooser style, more
@@ -168,9 +168,9 @@ private Q_SLOTS:
     void refitKeepsTheCentreAndTop()
     {
         const QRect available = twoScreens().at(0).available;
-        QCOMPARE(kbs::fitToArea(QRect(1000, 800, 430, 360), QSize(900, 200), available, 8), QRect(765, 800, 900, 200));
+        QCOMPARE(klinker::fitToArea(QRect(1000, 800, 430, 360), QSize(900, 200), available, 8), QRect(765, 800, 900, 200));
         // Same width: only the height changes, as when details open.
-        QCOMPARE(kbs::fitToArea(QRect(1000, 800, 430, 360), QSize(430, 500), available, 8), QRect(1000, 800, 430, 500));
+        QCOMPARE(klinker::fitToArea(QRect(1000, 800, 430, 360), QSize(430, 500), available, 8), QRect(1000, 800, 430, 500));
     }
 
     void refitIsClampedToTheScreen_data()
@@ -200,18 +200,18 @@ private Q_SLOTS:
         QFETCH(QSize, preferred);
         QFETCH(QRect, available);
         QFETCH(QRect, expected);
-        const QRect fitted = kbs::fitToArea(current, preferred, available, 8);
+        const QRect fitted = klinker::fitToArea(current, preferred, available, 8);
         QCOMPARE(fitted, expected);
         QVERIFY(available.contains(fitted));
     }
 
     void cursorIsOnlyTrustedWhereThePlatformReportsIt()
     {
-        QCOMPARE(kbs::reliableCursorPosition(u"xcb"_s, QPoint(0, 0)), std::optional<QPoint>(QPoint(0, 0)));
-        QCOMPARE(kbs::reliableCursorPosition(u"xcb"_s, QPoint(-5, 7)), std::optional<QPoint>(QPoint(-5, 7)));
-        QCOMPARE(kbs::reliableCursorPosition(u"wayland"_s, QPoint(10, 10)), std::nullopt);
-        QCOMPARE(kbs::reliableCursorPosition(u"wayland-egl"_s, QPoint(10, 10)), std::nullopt);
-        QCOMPARE(kbs::reliableCursorPosition(u"offscreen"_s, QPoint(10, 10)), std::nullopt);
+        QCOMPARE(klinker::reliableCursorPosition(u"xcb"_s, QPoint(0, 0)), std::optional<QPoint>(QPoint(0, 0)));
+        QCOMPARE(klinker::reliableCursorPosition(u"xcb"_s, QPoint(-5, 7)), std::optional<QPoint>(QPoint(-5, 7)));
+        QCOMPARE(klinker::reliableCursorPosition(u"wayland"_s, QPoint(10, 10)), std::nullopt);
+        QCOMPARE(klinker::reliableCursorPosition(u"wayland-egl"_s, QPoint(10, 10)), std::nullopt);
+        QCOMPARE(klinker::reliableCursorPosition(u"offscreen"_s, QPoint(10, 10)), std::nullopt);
     }
 };
 

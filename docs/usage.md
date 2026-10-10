@@ -10,7 +10,7 @@
 | `link...` | Handles each link in turn: preprocessing, then the first matching rule, otherwise the chooser. |
 | `--settings` | Opens the settings window (together with any links). |
 | `--choose` | Always shows the chooser, ignoring routing rules. Useful for testing rules or picking a browser once. |
-| `--config FILE` | Uses `FILE` instead of `~/.config/klinker/config.json` (and never reads the settings of Browser Switcher, see [configuration.md](configuration.md#settings-from-browser-switcher)). |
+| `--config FILE` | Uses `FILE` instead of `~/.config/klinker/config.json`; the default file is then neither read nor written. |
 | `-h`, `--help` / `-v`, `--version` | Prints help or the version without needing a display. |
 
 Links must be `http` or `https` URLs with a host, `file` URLs, or paths of
@@ -88,9 +88,8 @@ desktop files in `~/.local/share/applications`, `/usr/local/share`,
   line, and an icon name or image file. `{url}` in an argument is replaced by
   the link; without it the link is added as the last argument. Missing programs
   give a warning; commands that would pass the link to a shell as code are
-  refused. So are commands that would run Klinker itself, under its current
-  name (`klinker`) or its earlier one (`kde-browser-switcher`); desktop files
-  of either are never listed.
+  refused. So are commands that would run Klinker itself (`klinker`); its own
+  desktop file is never listed.
 - *Hide* / *Show*: hidden browsers are left out of the chooser but rules can
   still use them.
 - *Move Up* / *Move Down*: the order of the chooser and of its number keys.
@@ -114,8 +113,7 @@ the horizontal strip (kept, but unused, while the list is vertical), and
 
 **Privacy**: the two opt-in switches described in the README.
 
-**About** shows the configuration file and, until the settings are first
-saved, the Browser Switcher file they were read from.
+**About** shows the configuration file in use.
 
 *Apply* and *OK* check the rules and save atomically. *Apply* is only
 available while there are unsaved changes and keeps the window open; *OK*
@@ -135,9 +133,8 @@ refused rather than overwriting the newer file.
 - A browser that is not listed: check that its desktop file lists
   `x-scheme-handler/http` or `x-scheme-handler/https` in `MimeType`, then
   *Rescan*. Or add it manually.
-- To start over, move `~/.config/klinker/config.json` away, and
-  `~/.config/kde-browser-switcher/config.json` too if it exists: otherwise
-  Klinker reads that one instead.
+- To start over, move `~/.config/klinker/config.json` away; Klinker then
+  uses the defaults.
 
 ## Development
 
@@ -147,24 +144,24 @@ All tests:
 
 The GUI tests (`test_placement`, `test_chooser`, `test_settings`,
 `test_application`) run with `QT_QPA_PLATFORM=offscreen` and isolated XDG
-directories. Launch tests start `kbs_capture_fixture`, which only records its
+directories. Launch tests start `klinker_capture_fixture`, which only records its
 arguments. Focus changes to another application are reported to the offscreen
 platform the way a platform plugin would (`QWindowSystemInterface`), so these
 tests never involve real windows, the desktop or the clipboard.
 
 Screenshots of the chooser and every settings page in Breeze Light and Breeze
-Dark are written when `KBS_SCREENSHOT_DIR` is set:
+Dark are written when `KLINKER_SCREENSHOT_DIR` is set:
 
-    KBS_SCREENSHOT_DIR="$PWD/build/screenshots" ctest --test-dir build -R 'test_(chooser|settings|application)'
+    KLINKER_SCREENSHOT_DIR="$PWD/build/screenshots" ctest --test-dir build -R 'test_(chooser|settings|application)'
 
 Wayland smoke tests of the layer-shell chooser in a private, headless KWin with
 its own D-Bus session (nothing appears on your desktop):
 
     tests/wayland-smoke.sh build/tests/test_chooser waylandLayerShellPopup waylandFocusLoss waylandOwnPopupKeepsTheChooser
 
-or as a CTest entry with `-DKBS_WAYLAND_TESTS=ON`, which runs all three.
+or as a CTest entry with `-DKLINKER_WAYLAND_TESTS=ON`, which runs all three.
 `waylandFocusLoss` and `waylandOwnPopupKeepsTheChooser` start a second
-application, `kbs_focus_fixture` (a plain window), to take the keyboard focus
+application, `klinker_focus_fixture` (a plain window), to take the keyboard focus
 for real; they refuse to run anywhere but in that private session. To run only
 the placement test against the running Plasma session instead (a chooser
 appears briefly on the active screen):

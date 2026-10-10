@@ -12,7 +12,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 include(GNUInstallDirs)
 
 # Desktop file ID (without ".desktop"), also used as the icon name.
-set(KBS_APP_ID "io.github.manicminer.Klinker")
+set(KLINKER_APP_ID "io.github.manicminer.Klinker")
 
 find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Widgets Network DBus)
 find_package(KF6Config 6.0 REQUIRED)

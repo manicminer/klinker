@@ -5,7 +5,7 @@
 
 using namespace Qt::StringLiterals;
 
-namespace kbs
+namespace klinker
 {
 
 LaunchResult launchBrowser(const Browser &browser, const QString &url, const SelfIdentity &self)
@@ -38,4 +38,4 @@ LaunchResult launchBrowser(const Browser &browser, const QString &url, const Sel
     return result;
 }
 
-} // namespace kbs
+} // namespace klinker

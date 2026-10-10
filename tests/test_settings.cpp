@@ -30,16 +30,16 @@
 #include <memory>
 
 using namespace Qt::StringLiterals;
-using kbs::Config;
-using kbs::ConfigStore;
-using kbs::Rule;
-using kbs::RuleType;
-using kbs::SettingsDialog;
+using klinker::Config;
+using klinker::ConfigStore;
+using klinker::Rule;
+using klinker::RuleType;
+using klinker::SettingsDialog;
 
 namespace
 {
 
-const QString Fixture = QStringLiteral(KBS_CAPTURE_FIXTURE);
+const QString Fixture = QStringLiteral(KLINKER_CAPTURE_FIXTURE);
 
 template<typename T>
 T *child(QObject *parent, const QString &name)
@@ -88,8 +88,7 @@ struct SettingsFixture {
     QTemporaryDir dir;
     QString dataDir;
     QString configPath;
-    QString legacyPath; // read when configPath does not exist, if set
-    kbs::SelfIdentity self{{u"io.github.manicminer.KdeBrowserSwitcher.desktop"_s}, {u"kde-browser-switcher"_s}, {}};
+    klinker::SelfIdentity self{{u"io.github.manicminer.Klinker.desktop"_s}, {u"klinker"_s}, {}};
     std::unique_ptr<ConfigStore> store;
     std::unique_ptr<SettingsDialog> dialog;
 
@@ -97,9 +96,9 @@ struct SettingsFixture {
     {
         dataDir = dir.path() + u"/data"_s;
         configPath = dir.path() + u"/config/config.json"_s;
-        kbs::test::writeBrowserDesktopFile(dataDir, u"alpha.desktop"_s, u"Alpha"_s, Fixture + u" %u"_s, u"firefox"_s);
-        kbs::test::writeBrowserDesktopFile(dataDir, u"beta.desktop"_s, u"Beta"_s, u"/nonexistent/beta-browser %u"_s, u"chromium"_s);
-        kbs::test::writeBrowserDesktopFile(dataDir, u"gamma.desktop"_s, u"Gamma"_s, Fixture + u" --gamma %u"_s);
+        klinker::test::writeBrowserDesktopFile(dataDir, u"alpha.desktop"_s, u"Alpha"_s, Fixture + u" %u"_s, u"firefox"_s);
+        klinker::test::writeBrowserDesktopFile(dataDir, u"beta.desktop"_s, u"Beta"_s, u"/nonexistent/beta-browser %u"_s, u"chromium"_s);
+        klinker::test::writeBrowserDesktopFile(dataDir, u"gamma.desktop"_s, u"Gamma"_s, Fixture + u" --gamma %u"_s);
         if (!configJson.isEmpty()) {
             writeConfig(configJson);
         }
@@ -117,13 +116,13 @@ struct SettingsFixture {
     void open()
     {
         dialog.reset();
-        store = std::make_unique<ConfigStore>(configPath, legacyPath);
+        store = std::make_unique<ConfigStore>(configPath);
         const ConfigStore::LoadResult loaded = store->load();
         SettingsDialog::Context context;
         context.store = store.get();
         context.config = loaded.config;
         context.loadError = loaded.status == ConfigStore::LoadStatus::Invalid ? loaded.error : QString();
-        context.detected = kbs::discoverBrowsers({dataDir}, self).browsers;
+        context.detected = klinker::discoverBrowsers({dataDir}, self).browsers;
         context.dataDirs = {dataDir};
         context.self = self;
         dialog = std::make_unique<SettingsDialog>(context);
@@ -138,7 +137,7 @@ struct SettingsFixture {
 
     Config savedConfig() const
     {
-        const auto parsed = kbs::configFromJson(fileBytes());
+        const auto parsed = klinker::configFromJson(fileBytes());
         if (!parsed.config) {
             qWarning() << "saved config does not parse:" << parsed.error;
             return {};
@@ -182,8 +181,8 @@ struct SettingsFixture {
 void fillEditor(SettingsDialog *dialog, const QString &name, const QString &program, const QString &arguments,
                 const QString &icon = QString())
 {
-    QPointer<kbs::BrowserEditDialog> editor;
-    QTRY_VERIFY((editor = visibleChild<kbs::BrowserEditDialog>(dialog)));
+    QPointer<klinker::BrowserEditDialog> editor;
+    QTRY_VERIFY((editor = visibleChild<klinker::BrowserEditDialog>(dialog)));
     child<QLineEdit>(editor, u"nameEdit"_s)->setText(name);
     child<QLineEdit>(editor, u"programEdit"_s)->setText(program);
     child<QPlainTextEdit>(editor, u"argumentsEdit"_s)->setPlainText(arguments);
@@ -221,13 +220,13 @@ class TestSettings : public QObject
 public:
     static void initMain()
     {
-        kbs::test::isolateEnvironment();
+        klinker::test::isolateEnvironment();
     }
 
 private Q_SLOTS:
     void initTestCase()
     {
-        kbs::test::applyTheme(false);
+        klinker::test::applyTheme(false);
     }
 
     void hasTheExpectedPages()
@@ -247,7 +246,8 @@ private Q_SLOTS:
         }
         QVERIFY2(about.contains(u"klinker [--settings] [--choose] [--config FILE] [URL…]"_s), qPrintable(about.join(u'\n')));
         QVERIFY(about.contains(u"io.github.manicminer.Klinker.desktop"_s));
-        QVERIFY(!about.join(u'\n').contains(u"Browser Switcher"_s));
+        QVERIFY(about.contains(f.configPath));
+        QVERIFY2(!about.contains(u"Read from:"_s), qPrintable(about.join(u'\n')));
     }
 
     void browsersFollowTheConfiguredOrderAndShowProblems()
@@ -275,7 +275,7 @@ private Q_SLOTS:
         f.button(QDialogButtonBox::Apply)->click();
         QCOMPARE(saved.size(), 1);
         const Config config = f.savedConfig();
-        const auto manual = std::ranges::find_if(config.browsers, &kbs::BrowserSetting::manual);
+        const auto manual = std::ranges::find_if(config.browsers, &klinker::BrowserSetting::manual);
         QVERIFY(manual != config.browsers.cend());
         QCOMPARE(manual->name, std::optional<QString>(u"Work Profile"_s));
         QCOMPARE(manual->program, std::optional<QString>(Fixture));
@@ -290,8 +290,8 @@ private Q_SLOTS:
         QTest::addColumn<QString>("arguments");
         QTest::newRow("blank name") << u"  "_s << Fixture << u"{url}"_s;
         QTest::newRow("blank program") << u"X"_s << u""_s << u"{url}"_s;
-        QTest::newRow("itself") << u"X"_s << u"kde-browser-switcher"_s << u"{url}"_s;
-        QTest::newRow("itself behind env") << u"X"_s << u"env"_s << u"FOO=1\nkde-browser-switcher\n{url}"_s;
+        QTest::newRow("itself") << u"X"_s << u"klinker"_s << u"{url}"_s;
+        QTest::newRow("itself behind env") << u"X"_s << u"env"_s << u"FOO=1\nklinker\n{url}"_s;
         QTest::newRow("shell code") << u"X"_s << u"sh"_s << u"-c\nfirefox {url}"_s;
     }
 
@@ -300,8 +300,8 @@ private Q_SLOTS:
         QFETCH(QString, name);
         QFETCH(QString, program);
         QFETCH(QString, arguments);
-        const kbs::SelfIdentity self{{u"io.github.manicminer.KdeBrowserSwitcher.desktop"_s}, {u"kde-browser-switcher"_s}, {}};
-        kbs::BrowserEditDialog editor({}, self);
+        const klinker::SelfIdentity self{{u"io.github.manicminer.Klinker.desktop"_s}, {u"klinker"_s}, {}};
+        klinker::BrowserEditDialog editor({}, self);
         editor.show();
         child<QLineEdit>(&editor, u"nameEdit"_s)->setText(name);
         child<QLineEdit>(&editor, u"programEdit"_s)->setText(program);
@@ -315,8 +315,8 @@ private Q_SLOTS:
 
     void editorWarnsAboutAMissingExecutableButAllowsIt()
     {
-        const kbs::SelfIdentity self{{u"io.github.manicminer.KdeBrowserSwitcher.desktop"_s}, {u"kde-browser-switcher"_s}, {}};
-        kbs::BrowserEditDialog editor({}, self);
+        const klinker::SelfIdentity self{{u"io.github.manicminer.Klinker.desktop"_s}, {u"klinker"_s}, {}};
+        klinker::BrowserEditDialog editor({}, self);
         editor.show();
         child<QLineEdit>(&editor, u"nameEdit"_s)->setText(u"Later"_s);
         child<QLineEdit>(&editor, u"programEdit"_s)->setText(u"/opt/not-installed-yet/browser"_s);
@@ -333,7 +333,7 @@ private Q_SLOTS:
         SettingsFixture f;
         select(f.browsers(), 0); // Alpha
         click(f.dialog.get(), u"editBrowserButton"_s);
-        auto *editor = visibleChild<kbs::BrowserEditDialog>(f.dialog.get());
+        auto *editor = visibleChild<klinker::BrowserEditDialog>(f.dialog.get());
         QVERIFY(editor);
         QCOMPARE(child<QLineEdit>(editor, u"nameEdit"_s)->text(), u"Alpha"_s);
         QCOMPARE(child<QLineEdit>(editor, u"programEdit"_s)->text(), Fixture);
@@ -342,7 +342,7 @@ private Q_SLOTS:
         QVERIFY(f.browsers()->topLevelItem(0)->text(2).contains(u"Customised"_s));
         QVERIFY(f.dialog->apply());
         const Config config = f.savedConfig();
-        const auto alpha = std::ranges::find(config.browsers, u"alpha.desktop"_s, &kbs::BrowserSetting::id);
+        const auto alpha = std::ranges::find(config.browsers, u"alpha.desktop"_s, &klinker::BrowserSetting::id);
         QCOMPARE(alpha->name, std::optional<QString>(u"Alpha Renamed"_s));
         QCOMPARE(alpha->program, std::nullopt);
         QCOMPARE(alpha->arguments, std::nullopt);
@@ -352,9 +352,9 @@ private Q_SLOTS:
     // fields must keep them exactly.
     void editorKeepsUntouchedArgumentsExactly()
     {
-        const kbs::SelfIdentity self{{u"io.github.manicminer.KdeBrowserSwitcher.desktop"_s}, {u"kde-browser-switcher"_s}, {}};
+        const klinker::SelfIdentity self{{u"io.github.manicminer.Klinker.desktop"_s}, {u"klinker"_s}, {}};
         const QStringList arguments{u"--profile"_s, u""_s, u"   "_s, u"{url}"_s};
-        kbs::BrowserEditDialog editor({u"Alpha"_s, u"firefox"_s, {Fixture, arguments}}, self);
+        klinker::BrowserEditDialog editor({u"Alpha"_s, u"firefox"_s, {Fixture, arguments}}, self);
         editor.show();
         child<QLineEdit>(&editor, u"nameEdit"_s)->setText(u"Alpha Work"_s);
         child<QLineEdit>(&editor, u"iconEdit"_s)->setText(u"chromium"_s);
@@ -390,7 +390,7 @@ private Q_SLOTS:
                                  : QByteArray());
         if (!manual) {
             // Desktop entry quoting allows an empty argument.
-            kbs::test::writeBrowserDesktopFile(f.dataDir, u"alpha.desktop"_s, u"Alpha"_s, Fixture + u" --profile \"\" %u"_s, u"firefox"_s);
+            klinker::test::writeBrowserDesktopFile(f.dataDir, u"alpha.desktop"_s, u"Alpha"_s, Fixture + u" --profile \"\" %u"_s, u"firefox"_s);
             f.open();
         }
         const QString id = manual ? u"manual-1"_s : u"alpha.desktop"_s;
@@ -398,15 +398,15 @@ private Q_SLOTS:
                                             : QStringList{u"--profile"_s, u""_s, u"{url}"_s};
         select(f.browsers(), int(tableIds(f.browsers()).indexOf(id)));
         click(f.dialog.get(), u"editBrowserButton"_s);
-        QPointer<kbs::BrowserEditDialog> editor;
-        QTRY_VERIFY((editor = visibleChild<kbs::BrowserEditDialog>(f.dialog.get())));
+        QPointer<klinker::BrowserEditDialog> editor;
+        QTRY_VERIFY((editor = visibleChild<klinker::BrowserEditDialog>(f.dialog.get())));
         child<QLineEdit>(editor, u"nameEdit"_s)->setText(u"Renamed"_s);
         child<QDialogButtonBox>(editor, u"buttonBox"_s)->button(QDialogButtonBox::Ok)->click();
         QTRY_VERIFY(!editor || !editor->isVisible());
 
         QVERIFY(f.dialog->apply());
         const Config config = f.savedConfig();
-        const auto saved = std::ranges::find(config.browsers, id, &kbs::BrowserSetting::id);
+        const auto saved = std::ranges::find(config.browsers, id, &klinker::BrowserSetting::id);
         QVERIFY(saved != config.browsers.cend());
         QCOMPARE(saved->name, std::optional<QString>(u"Renamed"_s));
         if (manual) {
@@ -414,7 +414,7 @@ private Q_SLOTS:
         } else {
             QCOMPARE(saved->arguments, std::nullopt); // still follows the desktop file
         }
-        const kbs::BrowserCatalog catalog(kbs::discoverBrowsers({f.dataDir}, f.self).browsers, config.browsers);
+        const klinker::BrowserCatalog catalog(klinker::discoverBrowsers({f.dataDir}, f.self).browsers, config.browsers);
         QCOMPARE(catalog.browser(id)->command.arguments, expected);
     }
 
@@ -429,7 +429,7 @@ private Q_SLOTS:
         QCOMPARE(f.browsers()->topLevelItem(0)->text(0), u"Alpha"_s);
         QVERIFY(f.dialog->apply());
         const Config config = f.savedConfig();
-        const auto alpha = std::ranges::find(config.browsers, u"alpha.desktop"_s, &kbs::BrowserSetting::id);
+        const auto alpha = std::ranges::find(config.browsers, u"alpha.desktop"_s, &klinker::BrowserSetting::id);
         QCOMPARE(alpha->name, std::nullopt);
         QCOMPARE(alpha->icon, std::nullopt);
     }
@@ -490,11 +490,11 @@ private Q_SLOTS:
         QVERIFY(f.dialog->apply());
         const Config config = f.savedConfig();
         QCOMPARE(config.rules.at(1).browserId, u"alpha.desktop"_s);
-        const auto alpha = std::ranges::find(config.browsers, u"alpha.desktop"_s, &kbs::BrowserSetting::id);
+        const auto alpha = std::ranges::find(config.browsers, u"alpha.desktop"_s, &klinker::BrowserSetting::id);
         QVERIFY(alpha->removed);
         // Routing skips it.
-        kbs::BrowserCatalog catalog(kbs::discoverBrowsers({f.dataDir}, f.self).browsers, config.browsers);
-        QVERIFY(!kbs::RuleEngine(config.rules, catalog.browserIds()).route(u"https://github.com/kde"_s).matched());
+        klinker::BrowserCatalog catalog(klinker::discoverBrowsers({f.dataDir}, f.self).browsers, config.browsers);
+        QVERIFY(!klinker::RuleEngine(config.rules, catalog.browserIds()).route(u"https://github.com/kde"_s).matched());
     }
 
     void removeCanBeDeclined()
@@ -693,37 +693,35 @@ private Q_SLOTS:
         strip->setChecked(true);
         QVERIFY(!unwrap->isChecked());
         QVERIFY(f.dialog->apply());
-        QCOMPARE(f.savedConfig().privacy, (kbs::PrivacySettings{true, false}));
+        QCOMPARE(f.savedConfig().privacy, (klinker::PrivacySettings{true, false}));
         strip->setChecked(false);
         unwrap->setChecked(true);
         QVERIFY(f.dialog->apply());
-        QCOMPARE(f.savedConfig().privacy, (kbs::PrivacySettings{false, true}));
+        QCOMPARE(f.savedConfig().privacy, (klinker::PrivacySettings{false, true}));
     }
 
-    void legacySettingsAreShownAndImportedOnApply()
+    void onlyTheConfigurationFileIsUsed()
     {
+        // Another application's configuration next to it is neither read nor written.
         SettingsFixture f;
-        f.legacyPath = f.dir.path() + u"/kde-browser-switcher/config.json"_s;
-        QDir().mkpath(QFileInfo(f.legacyPath).absolutePath());
-        QFile legacy(f.legacyPath);
-        QVERIFY(legacy.open(QIODevice::WriteOnly));
-        legacy.write(TwoRules);
-        legacy.close();
+        const QString otherPath = f.dir.path() + u"/other-app/config.json"_s;
+        QDir().mkpath(QFileInfo(otherPath).absolutePath());
+        QFile other(otherPath);
+        QVERIFY(other.open(QIODevice::WriteOnly));
+        other.write(TwoRules);
+        other.close();
         f.open();
-        QCOMPARE(tableIds(f.browsers()), (QStringList{u"gamma.desktop"_s, u"alpha.desktop"_s, u"beta.desktop"_s}));
-
-        f.dialog->showPage(u"about"_s);
-        auto *source = child<QLabel>(f.dialog.get(), u"legacySourceLabel"_s);
-        QVERIFY(source && source->isVisible());
-        QCOMPARE(source->text(), f.legacyPath);
+        QCOMPARE(f.store->path(), f.configPath);
+        QCOMPARE(f.rules()->topLevelItemCount(), 0);
         QVERIFY(!QFile::exists(f.configPath));
 
+        child<QCheckBox>(f.dialog.get(), u"stripTrackingCheck"_s)->setChecked(true);
         QVERIFY(f.dialog->apply());
-        QCOMPARE(f.savedConfig().rules.size(), 2);
-        QVERIFY(legacy.open(QIODevice::ReadOnly));
-        QCOMPARE(legacy.readAll(), TwoRules);
-        // Saved: the old file is no longer what the settings come from.
-        QVERIFY(!source->isVisible());
+        QVERIFY(f.savedConfig().rules.isEmpty());
+        QVERIFY(f.savedConfig().privacy.stripTrackingParameters);
+        QVERIFY(other.open(QIODevice::ReadOnly));
+        QCOMPARE(other.readAll(), TwoRules);
+        QCOMPARE(QDir(QFileInfo(otherPath).absolutePath()).entryList(QDir::Files | QDir::Hidden), QStringList{u"config.json"_s});
     }
 
     // Appearance page
@@ -750,7 +748,7 @@ private Q_SLOTS:
         QVERIFY(!size->isEnabled());
         QVERIFY(!names->isEnabled());
         QVERIFY(focus->isEnabled());
-        QCOMPARE(f.dialog->draftConfig().chooser, kbs::ChooserSettings());
+        QCOMPARE(f.dialog->draftConfig().chooser, klinker::ChooserSettings());
         // Each control can be found by its label.
         for (QWidget *control : std::initializer_list<QWidget *>{style, size}) {
             const auto labels = f.dialog->findChildren<QLabel *>();
@@ -771,7 +769,7 @@ private Q_SLOTS:
         QVERIFY(names->isEnabled());
         size->setValue(96);
         names->setChecked(false);
-        QCOMPARE(f.dialog->draftConfig().chooser, (kbs::ChooserSettings{kbs::ChooserStyle::Horizontal, 96, false, false}));
+        QCOMPARE(f.dialog->draftConfig().chooser, (klinker::ChooserSettings{klinker::ChooserStyle::Horizontal, 96, false, false}));
 
         style->setCurrentIndex(style->findData(u"vertical"_s));
         QVERIFY(!size->isEnabled());
@@ -779,7 +777,7 @@ private Q_SLOTS:
         QCOMPARE(size->value(), 96);
         QVERIFY(!names->isChecked());
         QVERIFY(f.dialog->apply());
-        QCOMPARE(f.savedConfig().chooser, (kbs::ChooserSettings{kbs::ChooserStyle::Vertical, 96, false, false}));
+        QCOMPARE(f.savedConfig().chooser, (klinker::ChooserSettings{klinker::ChooserStyle::Vertical, 96, false, false}));
 
         // Out-of-range input is bounded by the control.
         size->setValue(500);
@@ -808,7 +806,7 @@ private Q_SLOTS:
         f.button(QDialogButtonBox::Ok)->click();
         QVERIFY(!f.dialog->isVisible());
         QCOMPARE(saved.size(), 1);
-        const kbs::ChooserSettings expected{kbs::ChooserStyle::Horizontal, 32, false, false};
+        const klinker::ChooserSettings expected{klinker::ChooserStyle::Horizontal, 32, false, false};
         QCOMPARE(saved.first().at(0).value<Config>().chooser, expected);
         QCOMPARE(f.savedConfig().chooser, expected);
     }
@@ -843,21 +841,21 @@ private Q_SLOTS:
         QVERIFY(child<QSpinBox>(f.dialog.get(), u"iconSizeSpin"_s)->isEnabled());
         QVERIFY(!child<QCheckBox>(f.dialog.get(), u"closeOnFocusLossCheck"_s)->isChecked());
         QVERIFY(f.dialog->apply());
-        QCOMPARE(f.savedConfig().chooser, (kbs::ChooserSettings{kbs::ChooserStyle::Horizontal, 112, true, false}));
+        QCOMPARE(f.savedConfig().chooser, (klinker::ChooserSettings{klinker::ChooserStyle::Horizontal, 112, true, false}));
     }
 
     void rescanMergesWithoutLosingSettings()
     {
         SettingsFixture f("{\"version\":1,\"browsers\":[{\"id\":\"gamma.desktop\"},{\"id\":\"beta.desktop\",\"name\":\"Beta Mine\"},{\"id\":\"alpha.desktop\",\"removed\":true}]}");
         QCOMPARE(tableIds(f.browsers()), (QStringList{u"gamma.desktop"_s, u"beta.desktop"_s}));
-        kbs::test::writeBrowserDesktopFile(f.dataDir, u"delta.desktop"_s, u"Delta"_s, Fixture + u" %u"_s);
+        klinker::test::writeBrowserDesktopFile(f.dataDir, u"delta.desktop"_s, u"Delta"_s, Fixture + u" %u"_s);
         click(f.dialog.get(), u"rescanButton"_s);
         QCOMPARE(tableIds(f.browsers()), (QStringList{u"gamma.desktop"_s, u"beta.desktop"_s, u"delta.desktop"_s}));
         QCOMPARE(f.browsers()->topLevelItem(1)->text(0), u"Beta Mine"_s);
         QVERIFY(f.message()->isVisible());
         QVERIFY(f.dialog->apply());
         const Config config = f.savedConfig();
-        const auto alpha = std::ranges::find(config.browsers, u"alpha.desktop"_s, &kbs::BrowserSetting::id);
+        const auto alpha = std::ranges::find(config.browsers, u"alpha.desktop"_s, &klinker::BrowserSetting::id);
         QVERIFY(alpha != config.browsers.cend() && alpha->removed);
     }
 
@@ -872,9 +870,9 @@ private Q_SLOTS:
         QVERIFY(f.dialog->apply());
         const Config config = f.savedConfig();
         QStringList saved;
-        for (const kbs::BrowserSetting &setting : config.browsers) {
+        for (const klinker::BrowserSetting &setting : config.browsers) {
             saved.append(setting.id);
-            QCOMPARE(setting, kbs::BrowserSetting{.id = setting.id}); // nothing but the position
+            QCOMPARE(setting, klinker::BrowserSetting{.id = setting.id}); // nothing but the position
         }
         QCOMPARE(saved, shown);
         QVERIFY(config.privacy.stripTrackingParameters);
@@ -888,14 +886,14 @@ private Q_SLOTS:
                           "{\"id\":\"beta.desktop\",\"name\":\"Beta Mine\"},"
                           "{\"id\":\"alpha.desktop\",\"removed\":true}]}");
         QCOMPARE(tableIds(f.browsers()), (QStringList{u"gamma.desktop"_s, u"beta.desktop"_s}));
-        kbs::test::writeBrowserDesktopFile(f.dataDir, u"delta.desktop"_s, u"Delta"_s, Fixture + u" %u"_s);
+        klinker::test::writeBrowserDesktopFile(f.dataDir, u"delta.desktop"_s, u"Delta"_s, Fixture + u" %u"_s);
         click(f.dialog.get(), u"rescanButton"_s);
         QCOMPARE(tableIds(f.browsers()), (QStringList{u"gamma.desktop"_s, u"beta.desktop"_s, u"delta.desktop"_s}));
         QVERIFY(f.dialog->apply());
 
         const Config config = f.savedConfig();
         QStringList saved;
-        for (const kbs::BrowserSetting &setting : config.browsers) {
+        for (const klinker::BrowserSetting &setting : config.browsers) {
             saved.append(setting.id);
         }
         // Settings of a browser that is not installed keep their place.
@@ -905,11 +903,11 @@ private Q_SLOTS:
         QVERIFY(config.browsers[1].hidden);
         QCOMPARE(config.browsers[2].name, std::optional<QString>(u"Beta Mine"_s));
         QVERIFY(config.browsers[3].removed);
-        QCOMPARE(config.browsers[4], kbs::BrowserSetting{.id = u"delta.desktop"_s});
+        QCOMPARE(config.browsers[4], klinker::BrowserSetting{.id = u"delta.desktop"_s});
 
         // The recorded position holds when a browser that sorts first by name
         // is installed later.
-        kbs::test::writeBrowserDesktopFile(f.dataDir, u"aardvark.desktop"_s, u"Aardvark"_s, Fixture + u" %u"_s);
+        klinker::test::writeBrowserDesktopFile(f.dataDir, u"aardvark.desktop"_s, u"Aardvark"_s, Fixture + u" %u"_s);
         f.open();
         QCOMPARE(tableIds(f.browsers()), (QStringList{u"gamma.desktop"_s, u"beta.desktop"_s, u"delta.desktop"_s, u"aardvark.desktop"_s}));
     }
@@ -933,7 +931,7 @@ private Q_SLOTS:
         child<QCheckBox>(f.dialog.get(), u"stripTrackingCheck"_s)->setChecked(true);
         QVERIFY(f.dialog->apply());
 
-        kbs::test::writeBrowserDesktopFile(f.dataDir, u"aardvark.desktop"_s, u"Aardvark"_s, Fixture + u" %u"_s);
+        klinker::test::writeBrowserDesktopFile(f.dataDir, u"aardvark.desktop"_s, u"Aardvark"_s, Fixture + u" %u"_s);
         if (uninstallBeta) {
             QVERIFY(QFile::remove(f.dataDir + u"/applications/beta.desktop"_s));
         }
@@ -944,9 +942,9 @@ private Q_SLOTS:
 
         const Config config = f.savedConfig();
         QStringList saved;
-        for (const kbs::BrowserSetting &setting : config.browsers) {
+        for (const klinker::BrowserSetting &setting : config.browsers) {
             saved.append(setting.id);
-            QCOMPARE(setting, kbs::BrowserSetting{.id = setting.id});
+            QCOMPARE(setting, klinker::BrowserSetting{.id = setting.id});
         }
         // An uninstalled browser keeps its saved place.
         QCOMPARE(saved, (QStringList{u"alpha.desktop"_s, u"beta.desktop"_s, u"aardvark.desktop"_s}));
@@ -1108,11 +1106,11 @@ private Q_SLOTS:
         // Editors that are cancelled or confirmed unchanged.
         select(f.browsers(), 1);
         click(f.dialog.get(), u"editBrowserButton"_s);
-        QPointer<kbs::BrowserEditDialog> editor;
-        QTRY_VERIFY((editor = visibleChild<kbs::BrowserEditDialog>(f.dialog.get())));
+        QPointer<klinker::BrowserEditDialog> editor;
+        QTRY_VERIFY((editor = visibleChild<klinker::BrowserEditDialog>(f.dialog.get())));
         editor->reject();
         click(f.dialog.get(), u"editBrowserButton"_s);
-        QTRY_VERIFY((editor = visibleChild<kbs::BrowserEditDialog>(f.dialog.get())));
+        QTRY_VERIFY((editor = visibleChild<klinker::BrowserEditDialog>(f.dialog.get())));
         child<QDialogButtonBox>(editor, u"buttonBox"_s)->button(QDialogButtonBox::Ok)->click();
         click(f.dialog.get(), u"removeBrowserButton"_s);
         QMessageBox *box = nullptr;
@@ -1127,7 +1125,7 @@ private Q_SLOTS:
     void rescanFindingABrowserEnablesApply()
     {
         SettingsFixture f;
-        kbs::test::writeBrowserDesktopFile(f.dataDir, u"delta.desktop"_s, u"Delta"_s, Fixture + u" %u"_s);
+        klinker::test::writeBrowserDesktopFile(f.dataDir, u"delta.desktop"_s, u"Delta"_s, Fixture + u" %u"_s);
         click(f.dialog.get(), u"rescanButton"_s);
         QVERIFY(f.canApply());
     }
@@ -1188,7 +1186,7 @@ private Q_SLOTS:
         QVERIFY(f.canApply());
         f.button(QDialogButtonBox::Apply)->click();
         QVERIFY(!f.canApply());
-        QCOMPARE(f.savedConfig().privacy, (kbs::PrivacySettings{true, true}));
+        QCOMPARE(f.savedConfig().privacy, (klinker::PrivacySettings{true, true}));
     }
 
     // OK saves what is shown even without changes, e.g. after Reload from Disk
@@ -1216,10 +1214,10 @@ private Q_SLOTS:
     void afterApplyScreenshot()
     {
         QFETCH(QString, style);
-        if (!kbs::test::hasStyle(style)) {
+        if (!klinker::test::hasStyle(style)) {
             QSKIP("style not installed");
         }
-        kbs::test::ThemeScope theme(style, true);
+        klinker::test::ThemeScope theme(style, true);
         SettingsFixture f(TwoRules);
         f.dialog->resize(900, 680);
         child<QCheckBox>(f.dialog.get(), u"stripTrackingCheck"_s)->setChecked(true);
@@ -1232,10 +1230,10 @@ private Q_SLOTS:
         option.initFrom(f.button(QDialogButtonBox::Apply));
         QCOMPARE(option.palette.currentColorGroup(), QPalette::Disabled);
         QVERIFY(f.button(QDialogButtonBox::Apply)->styleSheet().isEmpty());
-        if (!qEnvironmentVariableIsEmpty("KBS_SCREENSHOT_DIR")) {
+        if (!qEnvironmentVariableIsEmpty("KLINKER_SCREENSHOT_DIR")) {
             QTest::qWait(600); // Oxygen fades the button out
         }
-        kbs::test::saveScreenshot(f.dialog.get(), u"settings-after-apply-%1-dark"_s.arg(style.toLower()));
+        klinker::test::saveScreenshot(f.dialog.get(), u"settings-after-apply-%1-dark"_s.arg(style.toLower()));
     }
 
     void screenshots_data()
@@ -1248,7 +1246,7 @@ private Q_SLOTS:
     void screenshots()
     {
         QFETCH(bool, dark);
-        kbs::test::applyTheme(dark);
+        klinker::test::applyTheme(dark);
         const QString suffix = dark ? u"dark"_s : u"light"_s;
         SettingsFixture f(TwoRules);
         f.dialog->resize(900, 680);
@@ -1259,17 +1257,17 @@ private Q_SLOTS:
                 child<QLineEdit>(f.dialog.get(), u"testUrlEdit"_s)->setText(u"https://github.com/KDE/plasma-desktop"_s);
             }
             const QImage image = f.dialog->grab().toImage();
-            const int lightness = kbs::test::meanLightness(image);
+            const int lightness = klinker::test::meanLightness(image);
             QVERIFY2(dark ? lightness < 110 : lightness > 150, qPrintable(u"%1: mean lightness %2"_s.arg(page).arg(lightness)));
-            kbs::test::saveScreenshot(f.dialog.get(), u"settings-%1-%2"_s.arg(page, suffix));
+            klinker::test::saveScreenshot(f.dialog.get(), u"settings-%1-%2"_s.arg(page, suffix));
         }
         select(f.browsers(), 0);
         click(f.dialog.get(), u"editBrowserButton"_s);
-        auto *editor = visibleChild<kbs::BrowserEditDialog>(f.dialog.get());
+        auto *editor = visibleChild<klinker::BrowserEditDialog>(f.dialog.get());
         QVERIFY(editor);
-        kbs::test::saveScreenshot(editor, u"settings-browser-editor-"_s + suffix);
+        klinker::test::saveScreenshot(editor, u"settings-browser-editor-"_s + suffix);
         editor->reject();
-        kbs::test::applyTheme(false);
+        klinker::test::applyTheme(false);
     }
 };
 

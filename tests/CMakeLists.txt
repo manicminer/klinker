@@ -1,60 +1,60 @@
-function(kbs_add_test name)
+function(klinker_add_test name)
     add_executable(${name} ${name}.cpp)
-    target_link_libraries(${name} PRIVATE kbs_core Qt6::Test)
-    target_compile_definitions(${name} PRIVATE KBS_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+    target_link_libraries(${name} PRIVATE klinker_core Qt6::Test)
+    target_compile_definitions(${name} PRIVATE KLINKER_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
     add_test(NAME ${name} COMMAND ${name})
     set_tests_properties(${name} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endfunction()
 
-kbs_add_test(test_urlcleaner)
-kbs_add_test(test_rules)
-kbs_add_test(test_execcommand)
-kbs_add_test(test_browserdiscovery)
-kbs_add_test(test_browsercatalog)
-kbs_add_test(test_config)
+klinker_add_test(test_urlcleaner)
+klinker_add_test(test_rules)
+klinker_add_test(test_execcommand)
+klinker_add_test(test_browserdiscovery)
+klinker_add_test(test_browsercatalog)
+klinker_add_test(test_config)
 
-kbs_add_test(test_redirectresolver)
-target_link_libraries(test_redirectresolver PRIVATE kbs_network)
+klinker_add_test(test_redirectresolver)
+target_link_libraries(test_redirectresolver PRIVATE klinker_network)
 
 # Records its argv as a JSON array so launch tests never start a real browser.
-add_executable(kbs_capture_fixture fixtures/capture.cpp)
-target_link_libraries(kbs_capture_fixture PRIVATE Qt6::Core)
+add_executable(klinker_capture_fixture fixtures/capture.cpp)
+target_link_libraries(klinker_capture_fixture PRIVATE Qt6::Core)
 
 # A second application that takes the focus, only started by Wayland tests
 # inside the private nested KWin.
-add_executable(kbs_focus_fixture fixtures/focusfixture.cpp)
-target_link_libraries(kbs_focus_fixture PRIVATE Qt6::Widgets)
+add_executable(klinker_focus_fixture fixtures/focusfixture.cpp)
+target_link_libraries(klinker_focus_fixture PRIVATE Qt6::Widgets)
 
 # GUI tests run offscreen by default. Run them with QT_QPA_PLATFORM=wayland
 # (see tests/wayland-smoke.sh) to exercise layer-shell placement for real, and
-# set KBS_SCREENSHOT_DIR to keep the screenshots they take.
-function(kbs_add_gui_test name)
+# set KLINKER_SCREENSHOT_DIR to keep the screenshots they take.
+function(klinker_add_gui_test name)
     add_executable(${name} ${name}.cpp ${ARGN})
-    target_link_libraries(${name} PRIVATE kbs_app Qt6::Test Qt6::GuiPrivate KF6::IconThemes KF6::ColorScheme KF6::ConfigCore)
+    target_link_libraries(${name} PRIVATE klinker_app Qt6::Test Qt6::GuiPrivate KF6::IconThemes KF6::ColorScheme KF6::ConfigCore)
     target_compile_definitions(${name} PRIVATE
-        KBS_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
-        KBS_CAPTURE_FIXTURE="$<TARGET_FILE:kbs_capture_fixture>"
-        KBS_FOCUS_FIXTURE="$<TARGET_FILE:kbs_focus_fixture>"
-        KBS_APP_EXECUTABLE="$<TARGET_FILE:klinker>")
+        KLINKER_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
+        KLINKER_CAPTURE_FIXTURE="$<TARGET_FILE:klinker_capture_fixture>"
+        KLINKER_FOCUS_FIXTURE="$<TARGET_FILE:klinker_focus_fixture>"
+        KLINKER_APP_EXECUTABLE="$<TARGET_FILE:klinker>")
     target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-    add_dependencies(${name} kbs_capture_fixture kbs_focus_fixture klinker)
+    add_dependencies(${name} klinker_capture_fixture klinker_focus_fixture klinker)
     add_test(NAME ${name} COMMAND ${name})
     set_tests_properties(${name} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endfunction()
 
-kbs_add_gui_test(test_placement)
-kbs_add_gui_test(test_chooser testsupport.cpp)
-kbs_add_gui_test(test_settings testsupport.cpp)
-kbs_add_gui_test(test_application testsupport.cpp)
+klinker_add_gui_test(test_placement)
+klinker_add_gui_test(test_chooser testsupport.cpp)
+klinker_add_gui_test(test_settings testsupport.cpp)
+klinker_add_gui_test(test_application testsupport.cpp)
 
 if(LayerShellQt_FOUND)
     target_link_libraries(test_chooser PRIVATE LayerShellQt::Interface)
-    target_compile_definitions(test_chooser PRIVATE KBS_HAVE_LAYERSHELLQT)
+    target_compile_definitions(test_chooser PRIVATE KLINKER_HAVE_LAYERSHELLQT)
 endif()
 
 # Opt-in: runs the Wayland-only test functions in a private, virtual KWin.
-option(KBS_WAYLAND_TESTS "Run Wayland smoke tests in a nested virtual kwin_wayland" OFF)
-if(KBS_WAYLAND_TESTS)
+option(KLINKER_WAYLAND_TESTS "Run Wayland smoke tests in a nested virtual kwin_wayland" OFF)
+if(KLINKER_WAYLAND_TESTS)
     add_test(NAME wayland_smoke
         COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/wayland-smoke.sh $<TARGET_FILE:test_chooser>
             waylandLayerShellPopup waylandFocusLoss waylandOwnPopupKeepsTheChooser)

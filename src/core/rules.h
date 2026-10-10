@@ -9,7 +9,7 @@
 
 #include <regex.h>
 
-namespace kbs
+namespace klinker
 {
 
 enum class RuleType {
@@ -91,4 +91,4 @@ private:
     QList<QString> m_errors;
 };
 
-} // namespace kbs
+} // namespace klinker

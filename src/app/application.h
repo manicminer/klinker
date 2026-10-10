@@ -11,7 +11,7 @@
 #include <memory>
 #include <optional>
 
-namespace kbs
+namespace klinker
 {
 
 class ChooserWindow;
@@ -34,9 +34,7 @@ class Application : public QObject
 
 public:
     struct Options {
-        // Empty: ConfigStore::defaultPath(), read from legacyDefaultPath() while
-        // it does not exist. A given path is used as it is.
-        QString configPath;
+        QString configPath; // empty: ConfigStore::defaultPath()
         std::optional<QStringList> dataDirs; // empty: defaultDataDirs()
         bool alwaysChoose = false; // --choose
         SelfIdentity self = appSelfIdentity();
@@ -91,4 +89,4 @@ private:
     QPointer<SettingsDialog> m_settings;
 };
 
-} // namespace kbs
+} // namespace klinker
