@@ -117,7 +117,9 @@ the horizontal strip (kept, but unused, while the list is vertical), and
 **About** shows the configuration file and, until the settings are first
 saved, the Browser Switcher file they were read from.
 
-*Apply* and *OK* check the rules and save atomically. If the file was changed
+*Apply* and *OK* check the rules and save atomically. *Apply* is only
+available while there are unsaved changes and keeps the window open; *OK*
+saves what is shown even without changes and closes it. If the file was changed
 by someone else since it was loaded, or cannot be parsed, nothing is written
 and the reason is shown; *Reload from Disk* discards your unsaved changes and
 loads the file again. *Cancel* discards the changes made since the last

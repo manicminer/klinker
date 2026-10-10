@@ -22,7 +22,8 @@ namespace kbs
 
 // Browsers, chooser appearance, routing rules and privacy settings. All edits go to a draft;
 // nothing is written or changed elsewhere until Apply or OK succeeds, and
-// Cancel discards the draft.
+// Cancel discards the draft. Apply is only enabled while there are changes;
+// OK always saves.
 class SettingsDialog : public KPageDialog
 {
     Q_OBJECT
@@ -89,6 +90,8 @@ private:
 
     void showMessage(const QString &text, int type);
     void setSavingAllowed(bool allowed);
+    // Enables Apply only while the draft differs from m_saved.
+    void updateApplyButton();
     // Problems that block saving, e.g. an enabled rule with an invalid pattern.
     QStringList blockingProblems() const;
 
@@ -100,6 +103,7 @@ private:
     ChooserSettings m_chooser;
     QStringList m_dataDirs;
     SelfIdentity m_self;
+    Config m_saved; // the draft as last loaded or saved
     bool m_savingAllowed = true;
     bool m_loadingEditor = false;
 

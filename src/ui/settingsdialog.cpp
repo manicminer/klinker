@@ -177,6 +177,8 @@ SettingsDialog::SettingsDialog(const Context &context, QWidget *parent)
     refreshRules(m_rules.isEmpty() ? -1 : 0);
     resize(900, 680);
 
+    m_saved = draftConfig();
+    updateApplyButton();
     if (!context.loadError.isEmpty()) {
         showMessage(u"%1\nSaving is disabled until the file is fixed or moved away, so that nothing in it is lost."_s.arg(context.loadError),
                     KMessageWidget::Error);
@@ -293,15 +295,19 @@ QWidget *SettingsDialog::createAppearancePage()
     connect(m_chooserStyle, &QComboBox::currentIndexChanged, this, [this] {
         m_chooser.style = chooserStyleFromString(m_chooserStyle->currentData().toString()).value_or(ChooserStyle::Vertical);
         refreshAppearance();
+        updateApplyButton();
     });
     connect(m_iconSize, &QSpinBox::valueChanged, this, [this](int size) {
         m_chooser.iconSize = size;
+        updateApplyButton();
     });
     connect(m_showNames, &QCheckBox::toggled, this, [this](bool on) {
         m_chooser.showBrowserNames = on;
+        updateApplyButton();
     });
     connect(m_closeOnFocusLoss, &QCheckBox::toggled, this, [this](bool on) {
         m_chooser.closeOnFocusLoss = on;
+        updateApplyButton();
     });
     return page;
 }
@@ -359,6 +365,7 @@ QWidget *SettingsDialog::createRulesPage()
             loadRuleEditor();
         }
         updateTestResult();
+        updateApplyButton();
     });
     row->addWidget(m_ruleTable, 1);
 
@@ -465,6 +472,7 @@ QWidget *SettingsDialog::createPrivacyPage()
     connect(m_stripTracking, &QCheckBox::toggled, this, [this](bool on) {
         m_privacy.stripTrackingParameters = on;
         updateTestResult();
+        updateApplyButton();
     });
     root->addWidget(m_stripTracking);
     auto *stripHelp = subduedLabel(u"Removes known tracking parameters such as utm_source, fbclid, gclid and msclkid. It "
@@ -479,6 +487,7 @@ QWidget *SettingsDialog::createPrivacyPage()
     m_unwrapRedirects->setChecked(m_privacy.unwrapRedirects);
     connect(m_unwrapRedirects, &QCheckBox::toggled, this, [this](bool on) {
         m_privacy.unwrapRedirects = on;
+        updateApplyButton();
     });
     root->addWidget(m_unwrapRedirects);
     auto *notice = descriptionLabel(
@@ -600,7 +609,10 @@ bool SettingsDialog::apply()
     // Later rescans start from the order just saved, as if the dialog had been reopened.
     m_catalog = BrowserCatalog(m_detected, config.browsers);
     updateSourceRow();
-    showMessage(u"Settings saved."_s, KMessageWidget::Positive);
+    // Saved: Apply turning off says so; an earlier message no longer applies.
+    m_message->hide();
+    m_saved = config;
+    updateApplyButton();
     Q_EMIT saved(config, m_detected);
     return true;
 }
@@ -642,7 +654,12 @@ void SettingsDialog::setSavingAllowed(bool allowed)
 {
     m_savingAllowed = allowed;
     button(QDialogButtonBox::Ok)->setEnabled(allowed);
-    button(QDialogButtonBox::Apply)->setEnabled(allowed);
+    updateApplyButton();
+}
+
+void SettingsDialog::updateApplyButton()
+{
+    button(QDialogButtonBox::Apply)->setEnabled(m_savingAllowed && m_store && draftConfig() != m_saved);
 }
 
 void SettingsDialog::reload()
@@ -661,6 +678,7 @@ void SettingsDialog::reload()
     m_unwrapRedirects->setChecked(m_privacy.unwrapRedirects);
     refreshBrowsers();
     refreshRules(m_rules.isEmpty() ? -1 : 0);
+    m_saved = draftConfig();
     if (loaded.status == ConfigStore::LoadStatus::Invalid) {
         showMessage(u"%1\nSaving is disabled until the file is fixed or moved away, so that nothing in it is lost."_s.arg(loaded.error),
                     KMessageWidget::Error);
@@ -728,6 +746,7 @@ void SettingsDialog::refreshBrowsers(const QString &selectId)
     if (m_ruleTable) {
         refreshRules(selectedRule());
     }
+    updateApplyButton();
 }
 
 void SettingsDialog::updateBrowserButtons()
@@ -887,6 +906,7 @@ void SettingsDialog::refreshRules(int selectRow)
     }
     m_loadingEditor = false;
     loadRuleEditor();
+    updateApplyButton();
 }
 
 void SettingsDialog::loadRuleEditor()
@@ -956,6 +976,7 @@ void SettingsDialog::storeRuleEditor()
     m_loadingEditor = false;
     updateRuleProblem();
     updateTestResult();
+    updateApplyButton();
 }
 
 void SettingsDialog::updateRuleProblem()

@@ -1079,6 +1079,42 @@ private Q_SLOTS:
         QCOMPARE(configOnDisk(box.configPath).privacy, kbs::PrivacySettings());
     }
 
+    // Nothing is left to apply after Reload from Disk, but OK still takes the
+    // reloaded file over.
+    void reloadThenOkAdoptsTheFile()
+    {
+        Sandbox box;
+        Config config;
+        config.browsers = {box.capture(u"a"_s, u"Alpha"_s)};
+        box.writeConfig(config);
+        Application app(box.options());
+        app.openSettings();
+        QTRY_VERIFY(app.settingsDialog());
+        {
+            Application other(box.options());
+            other.openSettings();
+            QTRY_VERIFY(other.settingsDialog());
+            settingsCheck(other, u"unwrapRedirectsCheck"_s)->setChecked(true);
+            QVERIFY(other.settingsDialog()->apply());
+            other.settingsDialog()->reject();
+        }
+
+        settingsCheck(app, u"stripTrackingCheck"_s)->setChecked(true);
+        QVERIFY(!app.settingsDialog()->apply());
+        reloadFromDisk(app.settingsDialog());
+        auto *buttons = app.settingsDialog()->findChild<QDialogButtonBox *>();
+        QVERIFY(!buttons->button(QDialogButtonBox::Apply)->isEnabled());
+        buttons->button(QDialogButtonBox::Ok)->click();
+        QTRY_VERIFY(!app.settingsDialog());
+        QCOMPARE(app.config().privacy, (kbs::PrivacySettings{false, true}));
+
+        app.openSettings();
+        QTRY_VERIFY(app.settingsDialog());
+        settingsCheck(app, u"stripTrackingCheck"_s)->setChecked(true);
+        QVERIFY(app.settingsDialog()->apply());
+        QCOMPARE(configOnDisk(box.configPath).privacy, (kbs::PrivacySettings{true, true}));
+    }
+
     // Chooser preferences
 
     void chooserUsesTheConfiguredPreferences()

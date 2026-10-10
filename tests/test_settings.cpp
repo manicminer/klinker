@@ -22,6 +22,7 @@
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QSpinBox>
+#include <QStyleOptionButton>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTreeWidget>
@@ -169,6 +170,11 @@ struct SettingsFixture {
     QPushButton *button(QDialogButtonBox::StandardButton which) const
     {
         return dialog->findChild<QDialogButtonBox *>()->button(which);
+    }
+
+    bool canApply() const
+    {
+        return button(QDialogButtonBox::Apply)->isEnabled();
     }
 };
 
@@ -560,6 +566,13 @@ private Q_SLOTS:
         QVERIFY(!f.button(QDialogButtonBox::Apply)->isEnabled());
         QVERIFY(!f.dialog->apply());
         QCOMPARE(f.fileBytes(), QByteArray("{ not json"));
+
+        // Changes do not make it savable.
+        child<QCheckBox>(f.dialog.get(), u"stripTrackingCheck"_s)->setChecked(true);
+        click(f.dialog.get(), u"addRuleButton"_s);
+        QVERIFY(!f.button(QDialogButtonBox::Ok)->isEnabled());
+        QVERIFY(!f.canApply());
+        QCOMPARE(f.fileBytes(), QByteArray("{ not json"));
     }
 
     void rulesCanBeCreatedEditedOrderedAndRemoved()
@@ -622,6 +635,7 @@ private Q_SLOTS:
         QVERIFY(f.message()->isVisible());
         QVERIFY(f.message()->text().contains(u"Rule 1"_s));
         QVERIFY(!QFile::exists(f.configPath));
+        QVERIFY(f.canApply()); // still not saved
 
         // Disabled, the rule may be kept for later.
         child<QCheckBox>(f.dialog.get(), u"ruleEnabledCheck"_s)->setChecked(false);
@@ -937,6 +951,291 @@ private Q_SLOTS:
         // An uninstalled browser keeps its saved place.
         QCOMPARE(saved, (QStringList{u"alpha.desktop"_s, u"beta.desktop"_s, u"aardvark.desktop"_s}));
         QVERIFY(config.privacy.stripTrackingParameters);
+    }
+
+    // Apply
+    //
+    // Apply is enabled only while the settings differ from what was last
+    // loaded or saved; OK always saves and closes.
+
+    void applyStartsDisabled_data()
+    {
+        QTest::addColumn<QByteArray>("json");
+        QTest::newRow("no file, browsers found") << QByteArray();
+        QTest::newRow("saved settings") << TwoRules;
+    }
+
+    void applyStartsDisabled()
+    {
+        QFETCH(QByteArray, json);
+        SettingsFixture f(json);
+        QCOMPARE(f.browsers()->topLevelItemCount(), 3);
+        QCOMPARE(f.dialog->draftConfig().browsers.size(), 3); // found browsers keep their place when saved
+        QVERIFY(!f.canApply());
+        QVERIFY(f.button(QDialogButtonBox::Ok)->isEnabled());
+        QVERIFY(!f.message()->isVisible());
+    }
+
+    void appearanceAndPrivacyChangesEnableApplyUntilUndone()
+    {
+        SettingsFixture f;
+        auto *style = child<QComboBox>(f.dialog.get(), u"chooserStyleCombo"_s);
+        style->setCurrentIndex(style->findData(u"horizontal"_s));
+        QVERIFY(f.canApply());
+        style->setCurrentIndex(style->findData(u"vertical"_s));
+        QVERIFY(!f.canApply());
+
+        auto *size = child<QSpinBox>(f.dialog.get(), u"iconSizeSpin"_s);
+        size->setValue(64);
+        QVERIFY(f.canApply());
+        size->setValue(48);
+        QVERIFY(!f.canApply());
+
+        for (const QString &name : {u"showNamesCheck"_s, u"closeOnFocusLossCheck"_s, u"stripTrackingCheck"_s, u"unwrapRedirectsCheck"_s}) {
+            auto *check = child<QCheckBox>(f.dialog.get(), name);
+            check->toggle();
+            QVERIFY2(f.canApply(), qPrintable(name));
+            check->toggle();
+            QVERIFY2(!f.canApply(), qPrintable(name));
+        }
+    }
+
+    void browserChangesEnableApplyUntilUndone()
+    {
+        SettingsFixture f;
+        select(f.browsers(), 1);
+        click(f.dialog.get(), u"hideBrowserButton"_s);
+        QVERIFY(f.canApply());
+        click(f.dialog.get(), u"hideBrowserButton"_s); // Show
+        QVERIFY(!f.canApply());
+
+        select(f.browsers(), 2);
+        click(f.dialog.get(), u"moveBrowserUpButton"_s);
+        QVERIFY(f.canApply());
+        click(f.dialog.get(), u"moveBrowserDownButton"_s);
+        QVERIFY(!f.canApply());
+
+        select(f.browsers(), 0);
+        click(f.dialog.get(), u"editBrowserButton"_s);
+        fillEditor(f.dialog.get(), u"Alpha Renamed"_s, Fixture, u"{url}"_s, u"firefox"_s);
+        QVERIFY(f.canApply());
+        click(f.dialog.get(), u"editBrowserButton"_s);
+        fillEditor(f.dialog.get(), u"Alpha"_s, Fixture, u"{url}"_s, u"firefox"_s);
+        QVERIFY(!f.canApply());
+
+        click(f.dialog.get(), u"removeBrowserButton"_s);
+        confirmRemoval(f.dialog.get());
+        QVERIFY(f.canApply());
+
+        f.open();
+        click(f.dialog.get(), u"addBrowserButton"_s);
+        fillEditor(f.dialog.get(), u"Work Profile"_s, Fixture, u"{url}"_s);
+        QVERIFY(f.canApply());
+
+        f.writeConfig("{\"version\":1,\"browsers\":[{\"id\":\"alpha.desktop\",\"name\":\"Mine\"}]}");
+        f.open();
+        QVERIFY(!f.canApply());
+        select(f.browsers(), 0);
+        click(f.dialog.get(), u"resetBrowserButton"_s);
+        QVERIFY(f.canApply());
+    }
+
+    void ruleChangesEnableApplyUntilUndone()
+    {
+        SettingsFixture f(TwoRules);
+        f.showRule(0);
+        auto *name = child<QLineEdit>(f.dialog.get(), u"ruleNameEdit"_s);
+        name->setText(u"Work!"_s);
+        QVERIFY(f.canApply());
+        name->setText(u"Work"_s);
+        QVERIFY(!f.canApply());
+
+        auto *enabled = child<QCheckBox>(f.dialog.get(), u"ruleEnabledCheck"_s);
+        enabled->setChecked(false);
+        QVERIFY(f.canApply());
+        enabled->setChecked(true);
+        QVERIFY(!f.canApply());
+
+        f.rules()->topLevelItem(1)->setCheckState(0, Qt::Unchecked);
+        QVERIFY(f.canApply());
+        f.rules()->topLevelItem(1)->setCheckState(0, Qt::Checked);
+        QVERIFY(!f.canApply());
+
+        auto *type = child<QComboBox>(f.dialog.get(), u"ruleTypeCombo"_s);
+        type->setCurrentIndex(type->findData(u"domain"_s));
+        QVERIFY(f.canApply());
+        type->setCurrentIndex(type->findData(u"subdomain"_s));
+        QVERIFY(!f.canApply());
+
+        auto *pattern = child<QLineEdit>(f.dialog.get(), u"rulePatternEdit"_s);
+        pattern->setText(u"corp.example.org"_s);
+        QVERIFY(f.canApply());
+        pattern->setText(u"corp.example"_s);
+        QVERIFY(!f.canApply());
+
+        auto *target = child<QComboBox>(f.dialog.get(), u"ruleBrowserCombo"_s);
+        target->setCurrentIndex(target->findData(u"gamma.desktop"_s));
+        QVERIFY(f.canApply());
+        target->setCurrentIndex(target->findData(u"beta.desktop"_s));
+        QVERIFY(!f.canApply());
+
+        f.showRule(1);
+        click(f.dialog.get(), u"moveRuleUpButton"_s);
+        QVERIFY(f.canApply());
+        click(f.dialog.get(), u"moveRuleDownButton"_s);
+        QVERIFY(!f.canApply());
+
+        click(f.dialog.get(), u"addRuleButton"_s);
+        QVERIFY(f.canApply());
+        click(f.dialog.get(), u"removeRuleButton"_s); // the new rule
+        QVERIFY(!f.canApply());
+        f.showRule(0);
+        click(f.dialog.get(), u"removeRuleButton"_s);
+        QVERIFY(f.canApply());
+    }
+
+    void lookingAroundKeepsApplyDisabled()
+    {
+        SettingsFixture f(TwoRules);
+        for (const QString &page : {u"appearance"_s, u"rules"_s, u"privacy"_s, u"about"_s, u"browsers"_s}) {
+            f.dialog->showPage(page);
+        }
+        select(f.browsers(), 2);
+        select(f.browsers(), 0);
+        f.showRule(1);
+        child<QLineEdit>(f.dialog.get(), u"testUrlEdit"_s)->setText(u"https://github.com/kde"_s);
+
+        // Editors that are cancelled or confirmed unchanged.
+        select(f.browsers(), 1);
+        click(f.dialog.get(), u"editBrowserButton"_s);
+        QPointer<kbs::BrowserEditDialog> editor;
+        QTRY_VERIFY((editor = visibleChild<kbs::BrowserEditDialog>(f.dialog.get())));
+        editor->reject();
+        click(f.dialog.get(), u"editBrowserButton"_s);
+        QTRY_VERIFY((editor = visibleChild<kbs::BrowserEditDialog>(f.dialog.get())));
+        child<QDialogButtonBox>(editor, u"buttonBox"_s)->button(QDialogButtonBox::Ok)->click();
+        click(f.dialog.get(), u"removeBrowserButton"_s);
+        QMessageBox *box = nullptr;
+        QTRY_VERIFY((box = visibleChild<QMessageBox>(f.dialog.get())));
+        box->reject();
+
+        click(f.dialog.get(), u"rescanButton"_s); // nothing new installed
+        QCOMPARE(tableIds(f.browsers()), (QStringList{u"gamma.desktop"_s, u"alpha.desktop"_s, u"beta.desktop"_s}));
+        QVERIFY(!f.canApply());
+    }
+
+    void rescanFindingABrowserEnablesApply()
+    {
+        SettingsFixture f;
+        kbs::test::writeBrowserDesktopFile(f.dataDir, u"delta.desktop"_s, u"Delta"_s, Fixture + u" %u"_s);
+        click(f.dialog.get(), u"rescanButton"_s);
+        QVERIFY(f.canApply());
+    }
+
+    // Saving needs no confirmation: the message goes away, with its space.
+    void applySavesQuietlyAndDisablesItself()
+    {
+        SettingsFixture f(TwoRules);
+        QWidget *footer = f.button(QDialogButtonBox::Apply)->parentWidget()->parentWidget();
+        const int footerHeight = footer->sizeHint().height();
+        QSignalSpy saved(f.dialog.get(), &SettingsDialog::saved);
+        click(f.dialog.get(), u"rescanButton"_s);
+        QVERIFY(f.message()->isVisible());
+        auto *strip = child<QCheckBox>(f.dialog.get(), u"stripTrackingCheck"_s);
+        strip->setChecked(true);
+        QVERIFY(f.canApply());
+        f.button(QDialogButtonBox::Apply)->click();
+
+        QCOMPARE(saved.size(), 1);
+        QVERIFY(f.savedConfig().privacy.stripTrackingParameters);
+        QVERIFY(f.dialog->isVisible());
+        QVERIFY(!f.canApply());
+        QVERIFY(f.button(QDialogButtonBox::Ok)->isEnabled());
+        QVERIFY(!f.message()->isVisibleTo(f.dialog.get()));
+        QCOMPARE(footer->sizeHint().height(), footerHeight);
+
+        strip->setChecked(false);
+        QVERIFY(f.canApply());
+        strip->setChecked(true); // as saved
+        QVERIFY(!f.canApply());
+        QCOMPARE(saved.size(), 1);
+    }
+
+    void failedApplyKeepsTheChanges()
+    {
+        SettingsFixture f(TwoRules);
+        const QByteArray external = "{\"version\":1,\"privacy\":{\"stripTrackingParameters\":true}}";
+        f.writeConfig(external);
+        auto *unwrap = child<QCheckBox>(f.dialog.get(), u"unwrapRedirectsCheck"_s);
+        unwrap->setChecked(true);
+        f.button(QDialogButtonBox::Apply)->click();
+        QCOMPARE(f.fileBytes(), external);
+        QVERIFY(f.canApply());
+        QVERIFY(f.message()->isVisible());
+        QCOMPARE(f.message()->messageType(), KMessageWidget::Error);
+        QAction *reload = nullptr;
+        for (QAction *action : f.message()->actions()) {
+            if (action->text().contains(u"Reload"_s)) {
+                reload = action;
+            }
+        }
+        QVERIFY(reload && reload->isVisible());
+
+        reload->trigger();
+        QVERIFY(!f.canApply());
+        QVERIFY(child<QCheckBox>(f.dialog.get(), u"stripTrackingCheck"_s)->isChecked());
+        unwrap->setChecked(true);
+        QVERIFY(f.canApply());
+        f.button(QDialogButtonBox::Apply)->click();
+        QVERIFY(!f.canApply());
+        QCOMPARE(f.savedConfig().privacy, (kbs::PrivacySettings{true, true}));
+    }
+
+    // OK saves what is shown even without changes, e.g. after Reload from Disk
+    // or to write the defaults.
+    void okSavesWithoutChanges()
+    {
+        SettingsFixture f;
+        QSignalSpy saved(f.dialog.get(), &SettingsDialog::saved);
+        QVERIFY(!f.canApply());
+        f.button(QDialogButtonBox::Ok)->click();
+        QVERIFY(!f.dialog->isVisible());
+        QCOMPARE(saved.size(), 1);
+        QCOMPARE(f.savedConfig().browsers.size(), 3);
+    }
+
+    void afterApplyScreenshot_data()
+    {
+        QTest::addColumn<QString>("style");
+        for (const QString &style : {u"Oxygen"_s, u"Breeze"_s}) {
+            QTest::newRow(qPrintable(style)) << style;
+        }
+    }
+
+    // As reported, with the Breeze Dark colours.
+    void afterApplyScreenshot()
+    {
+        QFETCH(QString, style);
+        if (!kbs::test::hasStyle(style)) {
+            QSKIP("style not installed");
+        }
+        kbs::test::ThemeScope theme(style, true);
+        SettingsFixture f(TwoRules);
+        f.dialog->resize(900, 680);
+        child<QCheckBox>(f.dialog.get(), u"stripTrackingCheck"_s)->setChecked(true);
+        f.button(QDialogButtonBox::Apply)->click();
+        QVERIFY(f.savedConfig().privacy.stripTrackingParameters);
+        QVERIFY(!f.canApply());
+        QVERIFY(!f.message()->isVisibleTo(f.dialog.get()));
+        // The style draws the disabled button dimmed.
+        QStyleOptionButton option;
+        option.initFrom(f.button(QDialogButtonBox::Apply));
+        QCOMPARE(option.palette.currentColorGroup(), QPalette::Disabled);
+        QVERIFY(f.button(QDialogButtonBox::Apply)->styleSheet().isEmpty());
+        if (!qEnvironmentVariableIsEmpty("KBS_SCREENSHOT_DIR")) {
+            QTest::qWait(600); // Oxygen fades the button out
+        }
+        kbs::test::saveScreenshot(f.dialog.get(), u"settings-after-apply-%1-dark"_s.arg(style.toLower()));
     }
 
     void screenshots_data()
