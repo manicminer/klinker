@@ -35,7 +35,7 @@ the browser's name and number, and screen readers announce both.
 | Key | Action |
 |-----|--------|
 | 1–9 | Open the browser shown at that position (after filtering) |
-| ↑ ↓ (vertical) or ← → (horizontal), Enter | Select and open |
+| ↑ ↓ (vertical) or ← → (horizontal), Enter or Space | Select and open |
 | Home, End | First or last browser |
 | Letters | Filter the list by name; digits then type into the filter |
 | ↓ in the filter | Back to the list, where 1–9 work again |

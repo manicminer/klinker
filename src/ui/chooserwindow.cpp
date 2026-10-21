@@ -1204,6 +1204,7 @@ bool ChooserWindow::eventFilter(QObject *watched, QEvent *event)
             return true;
         case Qt::Key_Return:
         case Qt::Key_Enter:
+        case Qt::Key_Space:
             choose(m_list->currentIndex());
             return true;
         default:

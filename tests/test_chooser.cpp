@@ -362,6 +362,42 @@ private Q_SLOTS:
         QCOMPARE(chosen.takeFirst().at(0).toString(), u"b2.desktop"_s);
     }
 
+    void spaceChoosesLikeEnter_data()
+    {
+        QTest::addColumn<klinker::ChooserSettings>("preferences");
+        QTest::addColumn<Qt::Key>("next");
+        QTest::newRow("vertical") << klinker::ChooserSettings{} << Qt::Key_Down;
+        QTest::newRow("horizontal") << horizontal(48, false) << Qt::Key_Right;
+    }
+
+    void spaceChoosesLikeEnter()
+    {
+        QFETCH(klinker::ChooserSettings, preferences);
+        QFETCH(Qt::Key, next);
+        Fixture f(8, false, preferences);
+        QSignalSpy chosen(&f.window, &ChooserWindow::browserChosen);
+        QCOMPARE(QApplication::focusWidget(), f.list);
+        press(&f.window, next);
+        press(&f.window, Qt::Key_Space);
+        QTRY_COMPARE(chosen.size(), 1);
+        QCOMPARE(chosen.takeFirst().at(0).toString(), u"b2.desktop"_s);
+
+        // In the filter a space is text.
+        QTest::keyClicks(f.list, u"tor"_s);
+        auto *filter = child<QLineEdit>(&f.window, u"filterEdit"_s);
+        QVERIFY(filter->hasFocus());
+        QTest::keyClick(filter, Qt::Key_Space);
+        QCOMPARE(filter->text(), u"tor "_s);
+        QCOMPARE(chosen.size(), 0);
+        QTest::keyClick(filter, Qt::Key_Escape);
+        QVERIFY(f.list->hasFocus());
+
+        // Nothing is chosen while the link is resolved.
+        f.window.setBusy(u"Following redirects…"_s);
+        QTest::keyClick(f.list, Qt::Key_Space);
+        QCOMPARE(chosen.size(), 0);
+    }
+
     void escapeCancels()
     {
         Fixture f(3);

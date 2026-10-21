@@ -7,8 +7,8 @@ rules, or shows a small chooser:
 - a borderless, palette-themed card with your browsers, either as a list with
   their names and commands or as a horizontal strip of icons (size and names
   configurable); number keys 1–9 open the browser at that position, arrows
-  and Enter work, typing filters the browsers, Esc cancels, and optionally
-  switching to another application cancels too;
+  and Enter or Space work, typing filters the browsers, Esc cancels, and
+  optionally switching to another application cancels too;
 - the link that will be opened (plain text, elided, with a copy button) and,
   under *Details*, the link as received and what preprocessing did;
 - settings for browsers (detected automatically, plus your own), routing rules
