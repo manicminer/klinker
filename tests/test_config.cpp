@@ -214,12 +214,12 @@ private Q_SLOTS:
     void chooserDefaultsWithoutTheObject()
     {
         const ChooserSettings defaults;
-        QCOMPARE(defaults.style, ChooserStyle::Vertical);
+        QCOMPARE(defaults.style, ChooserStyle::Horizontal);
         QCOMPARE(defaults.iconSize, 48);
         QVERIFY(defaults.showBrowserNames);
         QVERIFY(!defaults.closeOnFocusLoss);
 
-        // A file written before the chooser object existed keeps the vertical list.
+        // A file without the chooser object gets the defaults.
         const auto old = configFromJson(R"({"version": 1, "privacy": {"unwrapRedirects": true}})");
         QVERIFY2(old.config, qPrintable(old.error));
         QCOMPARE(old.config->chooser, ChooserSettings());
@@ -229,6 +229,11 @@ private Q_SLOTS:
         const auto partial = configFromJson(R"({"version": 1, "chooser": {"style": "horizontal"}})");
         QVERIFY2(partial.config, qPrintable(partial.error));
         QCOMPARE(partial.config->chooser, (ChooserSettings{ChooserStyle::Horizontal, 48, true, false}));
+
+        // An explicitly saved vertical list is kept.
+        const auto saved = configFromJson(R"({"version": 1, "chooser": {"style": "vertical"}})");
+        QVERIFY2(saved.config, qPrintable(saved.error));
+        QCOMPARE(saved.config->chooser, (ChooserSettings{ChooserStyle::Vertical, 48, true, false}));
     }
 
     void chooserRoundTripsWithExactNames()

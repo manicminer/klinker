@@ -25,9 +25,9 @@ Exit status is 0 otherwise, including when the chooser is cancelled.
 
 ## The chooser
 
-The chooser is a vertical list by default. *Settings → Appearance* switches it
-to a horizontal strip of icons, with a choice of icon size (24–128 pixels) and
-whether names are shown under the icons. The window widens to show every icon;
+The chooser is a horizontal strip of icons by default. *Settings → Appearance*
+chooses the icon size (24–128 pixels) and whether names are shown under the
+icons, or switches it to a vertical list. The window widens to show every icon;
 a few icons are centred rather than stretched. Only when they do not fit on the
 screen does the strip scroll, and only sideways (scroll bar, mouse wheel or
 keyboard). On a screen too low for a whole row of the chosen size, the icons
@@ -109,7 +109,7 @@ An enabled rule with an invalid pattern or without a browser cannot be saved;
 disable it to keep it for later. *Test a link* shows which rule would handle a
 link (redirects are not followed when testing).
 
-**Appearance**: vertical list or horizontal icons, the icon size and names of
+**Appearance**: horizontal icons or vertical list, the icon size and names of
 the horizontal strip (kept, but unused, while the list is vertical), and
 *Close the chooser when it loses focus*.
 

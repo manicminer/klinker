@@ -789,6 +789,7 @@ ChooserWindow::ChooserWindow(QWidget *parent)
                              static_cast<QWidget *>(m_cancel)}) {
         control->installEventFilter(this);
     }
+    setPreferences(m_preferences);
     updateState();
 }
 

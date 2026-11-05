@@ -83,7 +83,7 @@ public:
     // The error or warning shown, or an empty string.
     QString messageText() const;
 
-    // Vertical (the default) or horizontal, the icon size and names of the
+    // Horizontal (the default) or vertical, the icon size and names of the
     // horizontal strip, and whether losing the focus cancels. Applies at once,
     // also to a shown window.
     void setPreferences(const ChooserSettings &preferences);

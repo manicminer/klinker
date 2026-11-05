@@ -73,7 +73,7 @@ or any history. `--config FILE` uses another file instead.
 | `browsers` | array   | `[]`    | Browser order and per-browser settings. |
 | `rules`    | array   | `[]`    | Routing rules, evaluated top to bottom. |
 | `privacy`  | object  | all off | URL preprocessing switches. |
-| `chooser`  | object  | vertical list | How the chooser looks and when it closes. |
+| `chooser`  | object  | horizontal strip | How the chooser looks and when it closes. |
 
 ## `browsers`
 
@@ -163,14 +163,15 @@ Both switches are off by default.
 
 ## `chooser`
 
-Every key is optional; a file without `chooser` gets the vertical list.
+Every key is optional; a file without `chooser` gets the horizontal strip. A
+saved `style` is always kept.
 
-| Key                | Type    | Default      | Meaning |
-|--------------------|---------|--------------|---------|
-| `style`            | string  | `"vertical"` | `"vertical"`: a list with each browser's name and command. `"horizontal"`: a strip of icons side by side that scrolls sideways only when they do not fit on the screen. |
-| `iconSize`         | integer | `48`         | Icon size of the horizontal strip in logical pixels, from 24 to 128. |
-| `showBrowserNames` | boolean | `true`       | Horizontal only: show each name under its icon. Names are always in the tooltip and for screen readers. |
-| `closeOnFocusLoss` | boolean | `false`      | Cancel the link, as Esc does, when another application takes the focus from the chooser. |
+| Key                | Type    | Default        | Meaning |
+|--------------------|---------|----------------|---------|
+| `style`            | string  | `"horizontal"` | `"horizontal"`: a strip of icons side by side that scrolls sideways only when they do not fit on the screen. `"vertical"`: a list with each browser's name and command. |
+| `iconSize`         | integer | `48`           | Icon size of the horizontal strip in logical pixels, from 24 to 128. |
+| `showBrowserNames` | boolean | `true`         | Horizontal only: show each name under its icon. Names are always in the tooltip and for screen readers. |
+| `closeOnFocusLoss` | boolean | `false`        | Cancel the link, as Esc does, when another application takes the focus from the chooser. |
 
 `iconSize` and `showBrowserNames` are kept while the vertical list is used, so
 switching back restores them. Values are checked, not adjusted: a `style`

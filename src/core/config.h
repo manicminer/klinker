@@ -23,8 +23,8 @@ struct PrivacySettings {
 };
 
 enum class ChooserStyle {
-    Vertical, // a list with names and details (the default)
-    Horizontal, // a strip of browser icons
+    Vertical, // a list with names and details
+    Horizontal, // a strip of browser icons (the default)
 };
 
 // "vertical" or "horizontal", as stored in the file.
@@ -36,7 +36,7 @@ struct ChooserSettings {
     static constexpr int MaxIconSize = 128;
     static constexpr int DefaultIconSize = 48;
 
-    ChooserStyle style = ChooserStyle::Vertical;
+    ChooserStyle style = ChooserStyle::Horizontal;
     // Horizontal only, in logical pixels; kept while the vertical style is used.
     int iconSize = DefaultIconSize;
     bool showBrowserNames = true; // horizontal only

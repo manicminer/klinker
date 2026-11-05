@@ -1294,6 +1294,7 @@ private Q_SLOTS:
         Sandbox box;
         Config config;
         config.browsers = {box.capture(u"a"_s, u"Alpha"_s), box.capture(u"b"_s, u"Beta"_s), box.capture(u"c"_s, u"Gamma"_s)};
+        config.chooser.style = klinker::ChooserStyle::Vertical; // a saved choice is kept
         box.writeConfig(config);
         Application app(box.options());
         app.openUrls({u"https://kde.org/"_s});
@@ -1301,6 +1302,7 @@ private Q_SLOTS:
         QPointer<ChooserWindow> chooser = app.chooser();
         QScreen *screen = chooser->screen();
         QCOMPARE(chooser->width(), ChooserWindow::CardWidth);
+        QCOMPARE(chooserList(app)->flow(), QListView::TopToBottom);
 
         chooser->findChild<QPushButton *>(u"settingsButton"_s)->click();
         QTRY_VERIFY(app.settingsDialog() && app.settingsDialog()->isVisible());

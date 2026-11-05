@@ -259,8 +259,8 @@ QWidget *SettingsDialog::createAppearancePage()
 
     m_chooserStyle = new QComboBox(page);
     m_chooserStyle->setObjectName(u"chooserStyleCombo"_s);
-    m_chooserStyle->addItem(u"Vertical list"_s, chooserStyleToString(ChooserStyle::Vertical));
     m_chooserStyle->addItem(u"Horizontal icons"_s, chooserStyleToString(ChooserStyle::Horizontal));
+    m_chooserStyle->addItem(u"Vertical list"_s, chooserStyleToString(ChooserStyle::Vertical));
     form->addRow(u"&Layout:"_s, m_chooserStyle);
 
     m_iconSize = new QSpinBox(page);
@@ -293,7 +293,7 @@ QWidget *SettingsDialog::createAppearancePage()
 
     refreshAppearance();
     connect(m_chooserStyle, &QComboBox::currentIndexChanged, this, [this] {
-        m_chooser.style = chooserStyleFromString(m_chooserStyle->currentData().toString()).value_or(ChooserStyle::Vertical);
+        m_chooser.style = chooserStyleFromString(m_chooserStyle->currentData().toString()).value_or(ChooserSettings().style);
         refreshAppearance();
         updateApplyButton();
     });

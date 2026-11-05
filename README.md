@@ -4,10 +4,10 @@ A native KDE Plasma link handler. Set it as your default web browser and every
 link you open either goes straight to the browser chosen by your routing
 rules, or shows a small chooser:
 
-- a borderless, palette-themed card with your browsers, either as a list with
-  their names and commands or as a horizontal strip of icons (size and names
-  configurable); number keys 1–9 open the browser at that position, arrows
-  and Enter or Space work, typing filters the browsers, Esc cancels, and
+- a borderless, palette-themed card with your browsers, either as a horizontal
+  strip of icons (the default; size and names configurable) or as a list with
+  their names and commands; number keys 1–9 open the browser at that position,
+  arrows and Enter or Space work, typing filters the browsers, Esc cancels, and
   optionally switching to another application cancels too;
 - the link that will be opened (plain text, elided, with a copy button) and,
   under *Details*, the link as received and what preprocessing did;
@@ -27,7 +27,7 @@ assets are shared.
        alt="Horizontal chooser in the Oxygen style with Breeze Dark colours: five browser icons with their names and number badges in one row, the second selected, under the link to open">
 </p>
 
-*The horizontal strip with browser names (Oxygen widget style, Breeze Dark colours).*
+*The horizontal strip with browser names, the default (Oxygen widget style, Breeze Dark colours).*
 
 <p>
   <img src="docs/screenshots/chooser-vertical.png" width="430"
@@ -36,7 +36,7 @@ assets are shared.
        alt="Horizontal chooser showing only larger browser icons with number badges, in the Oxygen style with Breeze Dark colours">
 </p>
 
-*The vertical list (the default, Breeze Light) and the horizontal strip with icons only.*
+*The vertical list (Breeze Light) and the horizontal strip with icons only.*
 
 <p>
   <img src="docs/screenshots/settings-appearance.png" width="760"
@@ -143,9 +143,9 @@ same file. Opening links never writes it; only *Apply* or *OK* in the settings
 does, atomically, and only if nobody else changed the file since it was
 loaded. While it does not exist, the defaults are used.
 
-*Appearance* in the settings chooses between the vertical list (the default)
-and the horizontal strip of icons, its icon size and names, and whether the
-chooser closes when it loses the focus.
+*Appearance* in the settings chooses between the horizontal strip of icons
+(the default) and the vertical list, the strip's icon size and names, and
+whether the chooser closes when it loses the focus.
 
 Routing rules are checked from the top; the first enabled rule that matches
 opens the link in its browser. For example:

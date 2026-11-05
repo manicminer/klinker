@@ -727,7 +727,7 @@ private Q_SLOTS:
 
     // Appearance page
 
-    void appearanceDefaultsKeepTheVerticalList()
+    void appearanceDefaultsToTheHorizontalStrip()
     {
         SettingsFixture f;
         f.dialog->showPage(u"appearance"_s);
@@ -738,16 +738,18 @@ private Q_SLOTS:
         QVERIFY(style && size && names && focus);
         QVERIFY(style->isVisible());
         QCOMPARE(style->count(), 2);
-        QCOMPARE(style->currentData().toString(), u"vertical"_s);
-        QCOMPARE(style->itemData(1).toString(), u"horizontal"_s);
+        QCOMPARE(style->currentIndex(), 0);
+        QCOMPARE(style->itemData(0).toString(), u"horizontal"_s);
+        QCOMPARE(style->itemText(0), u"Horizontal icons"_s);
+        QCOMPARE(style->itemData(1).toString(), u"vertical"_s);
+        QCOMPARE(style->itemText(1), u"Vertical list"_s);
         QCOMPARE(size->value(), 48);
         QCOMPARE(size->minimum(), 24);
         QCOMPARE(size->maximum(), 128);
         QVERIFY(names->isChecked());
         QVERIFY(!focus->isChecked());
-        // Only the horizontal chooser uses the icon size and names.
-        QVERIFY(!size->isEnabled());
-        QVERIFY(!names->isEnabled());
+        QVERIFY(size->isEnabled());
+        QVERIFY(names->isEnabled());
         QVERIFY(focus->isEnabled());
         QCOMPARE(f.dialog->draftConfig().chooser, klinker::ChooserSettings());
         // Each control can be found by its label.
@@ -979,9 +981,9 @@ private Q_SLOTS:
     {
         SettingsFixture f;
         auto *style = child<QComboBox>(f.dialog.get(), u"chooserStyleCombo"_s);
-        style->setCurrentIndex(style->findData(u"horizontal"_s));
-        QVERIFY(f.canApply());
         style->setCurrentIndex(style->findData(u"vertical"_s));
+        QVERIFY(f.canApply());
+        style->setCurrentIndex(style->findData(u"horizontal"_s));
         QVERIFY(!f.canApply());
 
         auto *size = child<QSpinBox>(f.dialog.get(), u"iconSizeSpin"_s);

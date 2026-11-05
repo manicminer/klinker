@@ -58,6 +58,11 @@ klinker::ChooserSettings horizontal(int iconSize = 48, bool names = true)
     return {klinker::ChooserStyle::Horizontal, iconSize, names, false};
 }
 
+klinker::ChooserSettings vertical()
+{
+    return {klinker::ChooserStyle::Vertical, klinker::ChooserSettings::DefaultIconSize, true, false};
+}
+
 // The browsers of the reported chooser, whose names fill their tiles.
 QList<ChooserEntry> reportedEntries()
 {
@@ -75,7 +80,7 @@ const QStringList Styles{u"Breeze"_s, u"Oxygen"_s, u"Fusion"_s};
 
 klinker::ChooserSettings closingOnFocusLoss()
 {
-    klinker::ChooserSettings preferences;
+    klinker::ChooserSettings preferences = vertical();
     preferences.closeOnFocusLoss = true;
     return preferences;
 }
@@ -85,7 +90,7 @@ struct Fixture {
     QListView *list = nullptr;
 
     // The list gets keyboard focus on its own; tests do not give it focus.
-    explicit Fixture(int count = 3, bool busy = false, const klinker::ChooserSettings &preferences = {})
+    explicit Fixture(int count = 3, bool busy = false, const klinker::ChooserSettings &preferences = vertical())
     {
         window.setPreferences(preferences);
         window.setOriginalUrl(Url);
@@ -366,7 +371,7 @@ private Q_SLOTS:
     {
         QTest::addColumn<klinker::ChooserSettings>("preferences");
         QTest::addColumn<Qt::Key>("next");
-        QTest::newRow("vertical") << klinker::ChooserSettings{} << Qt::Key_Down;
+        QTest::newRow("vertical") << vertical() << Qt::Key_Down;
         QTest::newRow("horizontal") << horizontal(48, false) << Qt::Key_Right;
     }
 
@@ -660,6 +665,7 @@ private Q_SLOTS:
         font.setPointSizeF(font.pointSizeF() * fontScale);
         QApplication::setFont(font);
         ChooserWindow window;
+        window.setPreferences(vertical());
         window.setOriginalUrl(u"https://l.example.net/?u="_s + QString(300, u'x'));
         window.setFinalUrl(Url, u"Followed 3 redirects.\nRemoved 2 tracking parameters.\nThe last request took a while."_s);
         window.setBrowsers(entries(6));
@@ -808,6 +814,7 @@ private Q_SLOTS:
     void emptyStateOffersSettings()
     {
         ChooserWindow window;
+        window.setPreferences(vertical());
         window.setFinalUrl(Url, QString());
         window.setBrowsers({}, 2);
         window.resize(window.preferredSize());
@@ -925,10 +932,12 @@ private Q_SLOTS:
 
     // Horizontal chooser
 
-    void verticalIsTheDefault()
+    void horizontalIsTheDefault()
     {
         ChooserWindow window;
         QCOMPARE(window.preferences(), klinker::ChooserSettings());
+        QCOMPARE(window.preferences().style, klinker::ChooserStyle::Horizontal);
+        QCOMPARE(window.findChild<QListView *>(u"browserList"_s)->flow(), QListView::LeftToRight);
         Fixture f(3);
         QCOMPARE(f.list->flow(), QListView::TopToBottom);
         QCOMPARE(f.window.preferredSize().width(), ChooserWindow::CardWidth);
@@ -1157,7 +1166,7 @@ private Q_SLOTS:
         QTRY_COMPARE(chosen.size(), 1);
         QCOMPARE(chosen.takeFirst().at(0).toString(), u"b3.desktop"_s);
 
-        f.window.setPreferences({});
+        f.window.setPreferences(vertical());
         QCOMPARE(f.list->flow(), QListView::TopToBottom);
         QCOMPARE(f.rowRect(1).left(), f.rowRect(0).left());
         QCOMPARE(f.window.preferredSize().width(), ChooserWindow::CardWidth);
@@ -1511,7 +1520,7 @@ private Q_SLOTS:
         check(u"shown again"_s);
 
         // The vertical list is unchanged.
-        f.window.setPreferences({});
+        f.window.setPreferences(vertical());
         QTRY_COMPARE(f.window.size(), f.window.preferredSize(maximum));
         QCOMPARE(f.window.width(), ChooserWindow::CardWidth);
         QCOMPARE(f.list->flow(), QListView::TopToBottom);
@@ -1813,8 +1822,8 @@ private Q_SLOTS:
         QTest::addColumn<bool>("busy");
         QTest::addColumn<klinker::ChooserSettings>("preferences");
         QTest::addColumn<QString>("style");
-        QTest::newRow("ready") << false << klinker::ChooserSettings() << QString();
-        QTest::newRow("busy, then ready") << true << klinker::ChooserSettings() << QString();
+        QTest::newRow("ready") << false << vertical() << QString();
+        QTest::newRow("busy, then ready") << true << vertical() << QString();
         QTest::newRow("horizontal") << false << horizontal(64, true) << QString();
         QTest::newRow("horizontal, busy, then ready") << true << horizontal(48, false) << QString();
         QTest::newRow("horizontal, reported six") << false << horizontal(48, true) << u"Breeze"_s;
