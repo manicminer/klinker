@@ -3,6 +3,7 @@
 ## Command line
 
     klinker [--settings] [--choose] [--config FILE] [link...]
+    klinker [--config FILE] --list-browsers
 
 | Option | Effect |
 |--------|--------|
@@ -11,6 +12,7 @@
 | `--settings` | Opens the settings window (together with any links). |
 | `--choose` | Always shows the chooser, ignoring routing rules. Useful for testing rules or picking a browser once. |
 | `--config FILE` | Uses `FILE` instead of `~/.config/klinker/config.json`; the default file is then neither read nor written. |
+| `--list-browsers` | Prints the browsers in chooser order, one per line: ID, name, command and `ok`, `hidden` or the problems (tab-separated); no display needed. Cannot be combined with links, `--settings` or `--choose`. |
 | `-h`, `--help` / `-v`, `--version` | Prints help or the version without needing a display. |
 
 Links must be `http` or `https` URLs with a host, `file` URLs, or paths of

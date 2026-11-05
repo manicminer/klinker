@@ -115,7 +115,8 @@ CommandLine parseCommandLine(const QStringList &arguments)
     const QCommandLineOption settings(u"settings"_s, u"Open the settings window (also the default without links)."_s);
     const QCommandLineOption choose(u"choose"_s, u"Always show the chooser, ignoring routing rules."_s);
     const QCommandLineOption config(u"config"_s, u"Use this configuration file instead of the default one."_s, u"file"_s);
-    parser.addOptions({settings, choose, config});
+    const QCommandLineOption list(u"list-browsers"_s, u"List the browsers, their commands and any problems, then exit."_s);
+    parser.addOptions({settings, choose, config, list});
     parser.addPositionalArgument(u"links"_s, u"http(s) or file links to open, one after another."_s, u"[link…]"_s);
 
     CommandLine result;
@@ -139,6 +140,12 @@ CommandLine parseCommandLine(const QStringList &arguments)
     if (parser.isSet(config) && result.configPath.isEmpty()) {
         result.action = CommandLine::Action::Error;
         result.error = u"--config needs a file name."_s;
+        return result;
+    }
+    if (parser.isSet(list)) {
+        result.action = parser.positionalArguments().isEmpty() && !parser.isSet(settings) && !parser.isSet(choose) ? CommandLine::Action::ListBrowsers
+                                                                                                                    : CommandLine::Action::Error;
+        result.error = u"--list-browsers cannot be combined with links, --settings or --choose."_s;
         return result;
     }
     for (const QString &argument : parser.positionalArguments()) {

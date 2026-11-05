@@ -1,0 +1,75 @@
+{
+    "id": "io.github.manicminer.Klinker",
+    "runtime": "org.kde.Platform",
+    "runtime-version": "6.11",
+    "sdk": "org.kde.Sdk",
+    "command": "klinker",
+    "branch": "stable",
+    "build-options": {
+        "no-debuginfo": true,
+        "strip": true
+    },
+    "cleanup": [
+        "/include",
+        "/lib/cmake",
+        "/lib/pkgconfig",
+        "/lib/qml",
+        "/lib/*.a",
+        "/share/qlogging-categories6"
+    ],
+    "finish-args": [
+        "--share=ipc",
+        "--share=network",
+        "--socket=wayland",
+        "--socket=fallback-x11",
+        "--talk-name=org.freedesktop.Flatpak",
+        "--talk-name=org.kde.KWin",
+        "--filesystem=host-os:ro",
+        "--filesystem=xdg-data/applications:ro",
+        "--filesystem=xdg-data/icons:ro",
+        "--filesystem=xdg-data/flatpak/exports/share:ro",
+        "--filesystem=xdg-data/flatpak/app:ro",
+        "--filesystem=/var/lib/flatpak/exports/share:ro",
+        "--filesystem=/var/lib/flatpak/app:ro",
+        "--filesystem=/var/lib/snapd/desktop:ro"
+    ],
+    "modules": [
+        {
+            "name": "layer-shell-qt",
+            "buildsystem": "cmake-ninja",
+            "builddir": true,
+            "config-opts": [
+                "-DCMAKE_BUILD_TYPE=Release",
+                "-DCMAKE_INSTALL_LIBDIR=lib",
+                "-DBUILD_TESTING=OFF"
+            ],
+            "sources": [
+                {
+                    "type": "archive",
+                    "url": "https://download.kde.org/stable/plasma/6.8.2/layer-shell-qt-6.8.2.tar.xz",
+                    "sha256": "8866504834e4727e30ca3674207781dc9a3ac50c8f042bbbc8d8cfdf2ece32a1"
+                }
+            ]
+        },
+        {
+            "name": "klinker",
+            "buildsystem": "cmake-ninja",
+            "builddir": true,
+            "config-opts": [
+                "-DCMAKE_BUILD_TYPE=Release",
+                "-DBUILD_TESTING=OFF"
+            ],
+            "sources": [
+                {
+                    "type": "dir",
+                    "path": "../..",
+                    "skip": [
+                        ".git",
+                        ".idea",
+                        "build"
+                    ]
+                }
+            ]
+        }
+    ]
+}

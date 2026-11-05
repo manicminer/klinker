@@ -12,6 +12,7 @@ struct CommandLine {
         Run,
         ShowHelp,
         ShowVersion,
+        ListBrowsers, // print the browsers Klinker can use and their problems
         Error, // message in `error`; exit with status 2
     };
 

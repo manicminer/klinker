@@ -1,5 +1,7 @@
 #include "theme.h"
 
+#include "core/hostsystem.h"
+
 #include <QApplication>
 #include <QFileInfo>
 #include <QPalette>
@@ -28,16 +30,23 @@ QIcon appIcon()
 
 QIcon browserIcon(const QString &spec)
 {
-    if (!spec.isEmpty()) {
-        if (QFileInfo(spec).isAbsolute()) {
-            if (QFileInfo(spec).isFile()) {
-                const QIcon icon(spec);
-                if (!icon.availableSizes().isEmpty() || !icon.pixmap(32).isNull()) {
-                    return icon;
-                }
-            }
-        } else if (QIcon::hasThemeIcon(spec)) {
+    QString file;
+    if (QFileInfo(spec).isAbsolute()) {
+        file = sandboxPath(spec);
+    } else if (!spec.isEmpty()) {
+        if (QIcon::hasThemeIcon(spec)) {
             return QIcon::fromTheme(spec);
+        }
+        // Inside a Flatpak sandbox the theme sees only the host's /usr/share/icons
+        // and per-user Flatpak icons; other host icons are looked up as files.
+        if (HostSystem::current().sandboxed) {
+            file = hostIconFile(spec);
+        }
+    }
+    if (QFileInfo(file).isFile()) {
+        const QIcon icon(file);
+        if (!icon.availableSizes().isEmpty() || !icon.pixmap(32).isNull()) {
+            return icon;
         }
     }
     return QIcon::fromTheme(u"internet-web-browser"_s, QApplication::style()->standardIcon(QStyle::SP_DesktopIcon));

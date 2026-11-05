@@ -24,6 +24,7 @@ struct DiscoveryResult {
 
 // XDG data directories in precedence order: $XDG_DATA_HOME, $XDG_DATA_DIRS, then
 // the user and system Flatpak export directories if they are not already listed.
+// Inside a Flatpak sandbox: the host's, from hostDataDirs().
 QStringList defaultDataDirs();
 
 // Desktop file ID of a file below an "applications" directory, e.g. "vendor-app.desktop".

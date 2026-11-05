@@ -53,7 +53,7 @@ The screenshots are taken by the tests from synthetic browsers and links; see
 Klinker targets KDE Plasma 6. It has been built and tested on Arch
 Linux only, with these packages:
 
-    sudo pacman -S --needed cmake ninja gcc qt6-base qt6-svg kconfig kwidgetsaddons kiconthemes layer-shell-qt desktop-file-utils
+    sudo pacman -S --needed cmake ninja gcc qt6-base qt6-svg kconfig kwidgetsaddons kiconthemes layer-shell-qt desktop-file-utils appstream
 
 The minimum versions CMake checks for are Qt 6.5, KConfig 6.0,
 KWidgetsAddons 6.10, KIconThemes 6.3 and LayerShellQt 6.6 (plus KColorScheme
@@ -69,6 +69,59 @@ The tests run offscreen, never start a real browser and never touch your
 configuration. See [docs/usage.md](docs/usage.md#development) for the Wayland
 smoke tests and screenshots.
 
+## Flatpak
+
+Klinker is published in the unofficial, signed
+[manicminer Flatpak repository](https://manicminer.github.io/flatpak/) (not
+Flathub), x86_64 only:
+
+    flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+    flatpak remote-add --user --if-not-exists manicminer https://manicminer.github.io/flatpak/manicminer.flatpakrepo
+    flatpak install --user manicminer io.github.manicminer.Klinker
+
+Update with `flatpak update --user io.github.manicminer.Klinker`. Each GitHub
+release also has a `.flatpak` bundle (`flatpak install --user FILE`), which
+takes its updates from the same repository. Then make it the default browser
+as [below](#making-it-the-default-browser); the entry is called **Klinker** as
+well, and `flatpak run io.github.manicminer.Klinker --settings` opens the
+settings.
+
+**What the sandbox allows, and what it does not protect.** Your browsers are
+installed outside the sandbox, so the Flatpak finds and starts them on your
+system (the host):
+
+- It may **run any program on the host as you**
+  (`--talk-name=org.freedesktop.Flatpak`, used through `flatpak-spawn --host`
+  and its `HostCommand` method).
+  Klinker uses this to start the browser you pick, with the same argument list
+  and checks as the native build, and to check which programs exist. But the
+  permission itself is not limited to that: with it, the sandbox does not
+  protect your system or files from Klinker. Install the Flatpak only if you
+  trust this build as much as a native installation.
+- It **reads, never writes**, the host's installed applications and icons:
+  `host-os:ro` (your system's `/usr`), `~/.local/share/applications` and
+  `~/.local/share/icons`, the per-user and system Flatpak exports and the
+  installations they link to, and `/var/lib/snapd/desktop`.
+- It talks to `org.kde.KWin` (only to ask which screen is active, to centre the
+  chooser there) and has network access, which is only used when *Follow
+  redirects* is turned on.
+
+Inherited from the KDE runtime: read-only `~/.config/kdeglobals` and the KDE
+settings bus names. Klinker never uses the OpenURI portal, which would pass the
+link to the default browser, i.e. back to Klinker.
+
+Differences from the native build: the settings live in
+`~/.var/app/io.github.manicminer.Klinker/config/klinker/config.json` (copy your
+`~/.config/klinker/config.json` there to keep them); browsers are looked up in
+your session's `PATH` on the host; `klinker --list-browsers` (as
+`flatpak run io.github.manicminer.Klinker --list-browsers`) shows which
+browsers it found and any problems. Browsers installed outside the directories
+above (for example only in `~/bin` without a desktop entry) can be added by
+hand with their full path. If you remove the `org.freedesktop.Flatpak`
+permission (e.g. with Flatseal), no browser can be started and Klinker says so.
+
+Packaging and release details: [packaging/flatpak/README.md](packaging/flatpak/README.md).
+
 ## Installing for your user
 
 Nothing is installed or changed until you run these commands yourself.
@@ -80,6 +133,7 @@ This installs:
 - `~/.local/bin/klinker`
 - `~/.local/share/applications/io.github.manicminer.Klinker.desktop`
 - `~/.local/share/icons/hicolor/scalable/apps/io.github.manicminer.Klinker.svg`
+- `~/.local/share/metainfo/io.github.manicminer.Klinker.metainfo.xml`
 - `~/.local/share/licenses/klinker/LICENSE`
 
 To see what would be installed without installing anything, stage it inside
@@ -128,6 +182,7 @@ well to remove them.
     klinker URL...           # route or choose, one link after another
     klinker --choose URL     # always show the chooser
     klinker --config FILE    # use another configuration file
+    klinker --list-browsers  # list the browsers, their commands and problems
 
 Accepted links are `http`, `https` and `file` URLs, and paths of existing
 files. Anything else (`javascript:`, `data:`, links with control characters

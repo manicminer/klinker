@@ -1,5 +1,7 @@
 #include "browserdiscovery.h"
 
+#include "hostsystem.h"
+
 #include <KConfigGroup>
 #include <KDesktopFile>
 
@@ -32,7 +34,15 @@ bool isShownInCurrentDesktop(const KConfigGroup &group)
     return !listsCurrent(group.readXdgListEntry("NotShowIn"));
 }
 
-std::optional<DetectedBrowser> readBrowser(const QString &path, const QString &desktopId, const SelfIdentity &self, QStringList *warnings)
+// A desktop entry that handles http(s), before the checks that need to know
+// which programs exist; these are made for all entries at once.
+struct Candidate {
+    DetectedBrowser browser;
+    QString tryExec;
+    QString warning; // the entry cannot be used, if TryExec allows it
+};
+
+std::optional<Candidate> readCandidate(const QString &path, const QString &desktopId)
 {
     const KDesktopFile file(path);
     const KConfigGroup group = file.desktopGroup();
@@ -44,12 +54,10 @@ std::optional<DetectedBrowser> readBrowser(const QString &path, const QString &d
     if (!mimeTypes.contains("x-scheme-handler/http"_L1) && !mimeTypes.contains("x-scheme-handler/https"_L1)) {
         return std::nullopt;
     }
-    const QString tryExec = group.readEntry("TryExec");
-    if (!tryExec.isEmpty() && resolveExecutable(tryExec).isEmpty()) {
-        return std::nullopt;
-    }
 
-    DetectedBrowser browser;
+    Candidate candidate;
+    candidate.tryExec = group.readEntry("TryExec");
+    DetectedBrowser &browser = candidate.browser;
     browser.desktopId = desktopId;
     browser.desktopFilePath = path;
     browser.name = file.readName();
@@ -60,28 +68,21 @@ std::optional<DetectedBrowser> readBrowser(const QString &path, const QString &d
 
     const QString exec = group.readEntry("Exec");
     if (exec.isEmpty()) {
-        warnings->append(u"%1: no Exec command."_s.arg(path));
-        return std::nullopt;
+        candidate.warning = u"%1: no Exec command."_s.arg(path);
+        return candidate;
     }
-    const ExecParseResult parsed = parseDesktopExec(exec, {browser.name, browser.icon, path});
+    // %k is for the program, which runs on the host.
+    const ExecParseResult parsed = parseDesktopExec(exec, {browser.name, browser.icon, hostPath(path)});
     if (!parsed.command) {
-        warnings->append(u"%1: %2"_s.arg(path, parsed.error));
-        return std::nullopt;
+        candidate.warning = u"%1: %2"_s.arg(path, parsed.error);
+        return candidate;
     }
     browser.command = *parsed.command;
-
-    if (self.desktopIds.contains(desktopId)) {
-        return std::nullopt;
-    }
     if (effectiveProgram(browser.command).isEmpty()) {
         // It could be ourselves, so it is never offered.
-        warnings->append(u"%1: cannot tell which program the command runs."_s.arg(path));
-        return std::nullopt;
+        candidate.warning = u"%1: cannot tell which program the command runs."_s.arg(path);
     }
-    if (isSelfCommand(browser.command, self)) {
-        return std::nullopt;
-    }
-    return browser;
+    return candidate;
 }
 
 void appendUnique(QStringList *list, const QString &path)
@@ -96,6 +97,9 @@ void appendUnique(QStringList *list, const QString &path)
 
 QStringList defaultDataDirs()
 {
+    if (HostSystem::current().sandboxed) {
+        return hostDataDirs();
+    }
     const QString home = QDir::homePath();
 
     QString dataHome = qEnvironmentVariable("XDG_DATA_HOME");
@@ -129,6 +133,7 @@ DiscoveryResult discoverBrowsers(const QStringList &dataDirs, const SelfIdentity
 {
     DiscoveryResult result;
     QSet<QString> seenIds;
+    QList<Candidate> candidates;
 
     for (const QString &dataDir : dataDirs) {
         const QString applicationsDir = dataDir + u"/applications"_s;
@@ -146,9 +151,32 @@ DiscoveryResult discoverBrowsers(const QStringList &dataDirs, const SelfIdentity
             }
             // The highest-precedence file decides, even when it hides the entry.
             seenIds.insert(desktopId);
-            if (auto browser = readBrowser(path, desktopId, self, &result.warnings)) {
-                result.browsers.append(*browser);
+            if (self.desktopIds.contains(desktopId)) {
+                continue;
             }
+            if (auto candidate = readCandidate(path, desktopId)) {
+                candidates.append(*candidate);
+            }
+        }
+    }
+
+    if (HostSystem::current().sandboxed) {
+        // One host query instead of one per program.
+        QStringList programs;
+        for (const Candidate &candidate : std::as_const(candidates)) {
+            programs << candidate.tryExec << effectiveProgram(candidate.browser.command);
+        }
+        programs.removeAll(QString());
+        refreshHostExecutables(programs);
+    }
+    for (const Candidate &candidate : std::as_const(candidates)) {
+        if (!candidate.tryExec.isEmpty() && resolveExecutable(candidate.tryExec).isEmpty()) {
+            continue;
+        }
+        if (!candidate.warning.isEmpty()) {
+            result.warnings.append(candidate.warning);
+        } else if (!isSelfCommand(candidate.browser.command, self)) {
+            result.browsers.append(candidate.browser);
         }
     }
 

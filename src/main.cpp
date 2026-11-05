@@ -1,5 +1,6 @@
 #include "app/application.h"
 #include "app/commandline.h"
+#include "ui/documentportal.h"
 #include "ui/theme.h"
 
 #include <KIconTheme>
@@ -50,6 +51,9 @@ int main(int argc, char **argv)
         case klinker::CommandLine::Action::ShowVersion:
             print(stdout, u"klinker %1\n"_s.arg(QStringLiteral(KLINKER_VERSION)));
             return 0;
+        case klinker::CommandLine::Action::ListBrowsers:
+            print(stdout, klinker::browserListing(commandLine.configPath));
+            return 0;
         default:
             print(stderr, u"klinker: %1\nTry “klinker --help”.\n"_s.arg(commandLine.error));
             return 2;
@@ -69,6 +73,10 @@ int main(int argc, char **argv)
     options.configPath = commandLine.configPath;
     options.alwaysChoose = commandLine.choose;
     klinker::Application controller(options);
+    // Flatpak forwards file links through the document portal; the browser runs on the host.
+    for (QString &url : commandLine.urls) {
+        url = klinker::hostFileUrl(url);
+    }
     QObject::connect(&controller, &klinker::Application::finished, &app, &QCoreApplication::quit, Qt::QueuedConnection);
 
     if (commandLine.settings) {

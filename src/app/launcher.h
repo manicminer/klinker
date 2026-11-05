@@ -16,7 +16,9 @@ struct LaunchResult {
 };
 
 // Starts the browser detached with the URL as a single argv element; no shell
-// is involved. Commands that fail validation are refused.
+// is involved. Commands that fail validation are refused. Inside a Flatpak
+// sandbox the browser is started on the host with Flatpak's HostCommand, and
+// success means the host has executed it; `pid` is then the host's PID.
 LaunchResult launchBrowser(const Browser &browser, const QString &url, const SelfIdentity &self);
 
 } // namespace klinker

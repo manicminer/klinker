@@ -342,6 +342,38 @@ private Q_SLOTS:
         QCOMPARE(klinker::parseCommandLine({u"klinker"_s, u"--help-all"_s}).action, CommandLine::Action::Error);
         QCOMPARE(klinker::parseCommandLine({u"klinker"_s, u"--version"_s}).action, CommandLine::Action::ShowVersion);
         QCOMPARE(klinker::parseCommandLine({u"klinker"_s, u"--bogus"_s}).action, CommandLine::Action::Error);
+
+        CommandLine list = klinker::parseCommandLine({u"klinker"_s, u"--config"_s, u"/tmp/x.json"_s, u"--list-browsers"_s});
+        QCOMPARE(list.action, CommandLine::Action::ListBrowsers);
+        QCOMPARE(list.configPath, u"/tmp/x.json"_s);
+        for (const QString &other : {u"https://a.example/"_s, u"--settings"_s, u"--choose"_s}) {
+            QCOMPARE(klinker::parseCommandLine({u"klinker"_s, u"--list-browsers"_s, other}).action, CommandLine::Action::Error);
+        }
+    }
+
+    void browserListingShowsCommandsAndProblems()
+    {
+        QTemporaryDir dir;
+        const QString data = dir.filePath(u"data"_s);
+        klinker::test::writeBrowserDesktopFile(data, u"capture.desktop"_s, u"Capture"_s, Fixture + u" --out /nonexistent %u"_s);
+        klinker::test::writeBrowserDesktopFile(data, u"gone.desktop"_s, u"Gone"_s, u"klinker-test-no-such-browser %u"_s);
+        const QString config = dir.filePath(u"config.json"_s);
+        QFile file(config);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write(R"({"version": 1, "browsers": [{"id": "gone.desktop", "hidden": true}, {"id": "manual-1", "manual": true,
+            "name": "Self", "program": "klinker", "arguments": ["{url}"]}]})");
+        file.close();
+
+        const QStringList lines = klinker::browserListing(config, QStringList{data}).split(u'\n', Qt::SkipEmptyParts);
+        QCOMPARE(lines, (QStringList{
+                            u"gone.desktop\tGone\tklinker-test-no-such-browser {url}\t“klinker-test-no-such-browser” was not found in PATH."_s,
+                            u"manual-1\tSelf\tklinker {url}\tThis command would open Klinker itself."_s,
+                            u"capture.desktop\tCapture\t%1 --out /nonexistent {url}\tok"_s.arg(Fixture),
+                        }));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("{");
+        file.close();
+        QVERIFY(klinker::browserListing(config, QStringList{data}).startsWith(u"error: %1: "_s.arg(config)));
     }
 
     void linksArePreservedExactly()
@@ -556,7 +588,7 @@ private Q_SLOTS:
         const klinker::SelfIdentity self = klinker::appSelfIdentity();
         QCOMPARE(self.desktopIds.first(), u"io.github.manicminer.Klinker.desktop"_s);
         QCOMPARE(self.desktopIds, (QStringList{u"io.github.manicminer.Klinker.desktop"_s, u"klinker.desktop"_s}));
-        QCOMPARE(self.executableNames, QStringList{u"klinker"_s});
+        QCOMPARE(self.executableNames, (QStringList{u"klinker"_s, u"io.github.manicminer.Klinker"_s}));
         QVERIFY(self.executablePaths.contains(QCoreApplication::applicationFilePath()));
     }
 

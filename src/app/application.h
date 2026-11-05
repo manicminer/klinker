@@ -20,6 +20,11 @@ class SettingsDialog;
 // SelfIdentity::current() with this application's desktop file ID.
 SelfIdentity appSelfIdentity();
 
+// For --list-browsers: one line per browser in chooser order, tab-separated:
+// ID, name, command and "ok", "hidden" or its problems. A configuration that
+// cannot be read comes first, prefixed with "error:".
+QString browserListing(const QString &configPath, const std::optional<QStringList> &dataDirs = std::nullopt);
+
 // Runs one invocation: links are preprocessed and routed one after another,
 // showing the chooser when no rule applies; settings can be opened at any time.
 // Nothing is saved unless the user saves the settings. While the settings are

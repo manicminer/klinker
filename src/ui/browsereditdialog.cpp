@@ -1,5 +1,6 @@
 #include "browsereditdialog.h"
 
+#include "documentportal.h"
 #include "theme.h"
 
 #include <KIconDialog>
@@ -63,7 +64,7 @@ BrowserEditDialog::BrowserEditDialog(const BrowserFields &fields, const SelfIden
     connect(browseProgram, &QPushButton::clicked, this, [this] {
         const QString file = QFileDialog::getOpenFileName(this, u"Choose Program"_s, m_program->text());
         if (!file.isEmpty()) {
-            m_program->setText(file);
+            m_program->setText(hostFilePath(file));
         }
     });
     programRow->addWidget(browseProgram);

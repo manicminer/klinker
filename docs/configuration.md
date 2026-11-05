@@ -4,7 +4,8 @@ Klinker keeps its settings in a single human-editable JSON file:
 
     $XDG_CONFIG_HOME/klinker/config.json
 
-(`~/.config/klinker/config.json` when `XDG_CONFIG_HOME` is unset.)
+(`~/.config/klinker/config.json` when `XDG_CONFIG_HOME` is unset; in the
+Flatpak `~/.var/app/io.github.manicminer.Klinker/config/klinker/config.json`.)
 A missing file means "all defaults". The application never stores visited URLs
 or any history. `--config FILE` uses another file instead.
 

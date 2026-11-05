@@ -24,6 +24,29 @@ SelfIdentity appSelfIdentity()
     return self;
 }
 
+QString browserListing(const QString &configPath, const std::optional<QStringList> &dataDirs)
+{
+    ConfigStore store(configPath.isEmpty() ? ConfigStore::defaultPath() : configPath);
+    const ConfigStore::LoadResult loaded = store.load();
+    const SelfIdentity self = appSelfIdentity();
+    const BrowserCatalog catalog(discoverBrowsers(dataDirs.value_or(defaultDataDirs()), self).browsers, loaded.config.browsers);
+
+    QStringList lines;
+    if (loaded.status == ConfigStore::LoadStatus::Invalid) {
+        lines.append(u"error: %1: %2"_s.arg(store.path(), loaded.error));
+    }
+    for (const Browser &browser : catalog.browsers()) {
+        const CommandValidation validation = validateCommand(browser.command, self);
+        QStringList status = validation.errors + validation.warnings;
+        if (status.isEmpty()) {
+            status.append(browser.hidden ? u"hidden"_s : u"ok"_s);
+        }
+        const QString command = (QStringList{browser.command.program} + browser.command.arguments).join(u' ');
+        lines.append(QStringList{browser.id, browser.name, command, status.join(u' ')}.join(u'\t'));
+    }
+    return lines.isEmpty() ? QString() : lines.join(u'\n') + u'\n';
+}
+
 Application::Application(const Options &options, QObject *parent)
     : QObject(parent)
     , m_options(options)

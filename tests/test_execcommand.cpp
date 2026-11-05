@@ -1,5 +1,6 @@
 #include "core/execcommand.h"
 
+#include <QDir>
 #include <QFile>
 #include <QTemporaryDir>
 #include <QTest>
@@ -198,6 +199,11 @@ private Q_SLOTS:
         QVERIFY(isSelfCommand({u"/usr/bin/klinker"_s, {u"{url}"_s}}, self));
         QVERIFY(isSelfCommand({selfPath, {}}, self));
         QVERIFY(isSelfCommand({dir.filePath(u"link-to-self"_s), {}}, self));
+        // An alias of an installed copy under another name: what it links to counts.
+        QVERIFY(QDir().mkpath(dir.filePath(u"installed"_s)));
+        const QString installed = makeExecutable(dir, u"installed/klinker"_s);
+        QVERIFY(QFile::link(installed, dir.filePath(u"web-browser"_s)));
+        QVERIFY(isSelfCommand({dir.filePath(u"web-browser"_s), {}}, self));
         QVERIFY(isSelfCommand({u"env"_s, {u"A=1"_s, u"klinker"_s, u"{url}"_s}}, self));
         QVERIFY(!isSelfCommand({u"firefox"_s, {}}, self));
         QVERIFY(!isSelfCommand({u"klinker-helper"_s, {}}, self));
@@ -228,11 +234,28 @@ private Q_SLOTS:
     {
         const SelfIdentity self = SelfIdentity::current();
         QCOMPARE(self.desktopIds, (QStringList{u"io.github.manicminer.Klinker.desktop"_s, u"klinker.desktop"_s}));
-        QCOMPARE(self.executableNames, QStringList{u"klinker"_s});
+        // The second is the wrapper Flatpak exports for the installed application.
+        QCOMPARE(self.executableNames, (QStringList{u"klinker"_s, u"io.github.manicminer.Klinker"_s}));
+        QCOMPARE(self.flatpakIds, QStringList{u"io.github.manicminer.Klinker"_s});
         // Other programs that merely share a word are browsers like any other.
         for (const QString &program : {u"browser"_s, u"klinker2"_s, u"/opt/klinker/firefox"_s}) {
             QVERIFY2(!isSelfCommand({program, {u"{url}"_s}}, self), qPrintable(program));
         }
+    }
+
+    void flatpakRunOfKlinkerIsSelf()
+    {
+        const SelfIdentity self = SelfIdentity::current();
+        const QString id = u"io.github.manicminer.Klinker"_s;
+        QVERIFY(isSelfCommand({u"flatpak"_s, {u"run"_s, id, u"{url}"_s}}, self));
+        QVERIFY(isSelfCommand({u"/usr/bin/flatpak"_s, {u"run"_s, u"--branch=stable"_s, u"--command=klinker"_s, id, u"@@u"_s, u"{url}"_s, u"@@"_s}}, self));
+        QVERIFY(isSelfCommand({u"flatpak"_s, {u"run"_s, id + u"//stable"_s}}, self));
+        QVERIFY(isSelfCommand({u"env"_s, {u"A=1"_s, u"flatpak"_s, u"run"_s, id}}, self));
+        QVERIFY(isSelfCommand({u"/var/lib/flatpak/exports/bin/io.github.manicminer.Klinker"_s, {u"{url}"_s}}, self));
+        QVERIFY(!validateCommand({u"flatpak"_s, {u"run"_s, id}}, self).ok());
+        // Other Flatpak applications are browsers like any other.
+        QVERIFY(!isSelfCommand({u"flatpak"_s, {u"run"_s, u"org.mozilla.firefox"_s, u"{url}"_s}}, self));
+        QVERIFY(!isSelfCommand({u"flatpak"_s, {u"run"_s, id + u".Other"_s}}, self));
     }
 
     void validation()

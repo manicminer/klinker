@@ -1,9 +1,17 @@
+# Tests run as the native application, also inside a Flatpak build sandbox;
+# those for the sandboxed application say so themselves (HostSystem::setCurrent()).
+function(klinker_test_properties name)
+    add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        ENVIRONMENT_MODIFICATION "FLATPAK_ID=unset:")
+endfunction()
+
 function(klinker_add_test name)
     add_executable(${name} ${name}.cpp)
     target_link_libraries(${name} PRIVATE klinker_core Qt6::Test)
     target_compile_definitions(${name} PRIVATE KLINKER_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
-    add_test(NAME ${name} COMMAND ${name})
-    set_tests_properties(${name} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    klinker_test_properties(${name})
 endfunction()
 
 klinker_add_test(test_urlcleaner)
@@ -38,14 +46,15 @@ function(klinker_add_gui_test name)
         KLINKER_APP_EXECUTABLE="$<TARGET_FILE:klinker>")
     target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     add_dependencies(${name} klinker_capture_fixture klinker_focus_fixture klinker)
-    add_test(NAME ${name} COMMAND ${name})
-    set_tests_properties(${name} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    klinker_test_properties(${name})
 endfunction()
 
 klinker_add_gui_test(test_placement)
 klinker_add_gui_test(test_chooser testsupport.cpp)
 klinker_add_gui_test(test_settings testsupport.cpp)
 klinker_add_gui_test(test_application testsupport.cpp)
+klinker_add_gui_test(test_sandbox)
+target_link_libraries(test_sandbox PRIVATE Qt6::DBus)
 
 if(LayerShellQt_FOUND)
     target_link_libraries(test_chooser PRIVATE LayerShellQt::Interface)

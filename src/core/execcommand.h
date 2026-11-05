@@ -59,12 +59,14 @@ struct SelfIdentity {
     QStringList desktopIds;
     QStringList executableNames; // file names, wherever they are installed
     QStringList executablePaths;
+    QStringList flatpakIds; // `flatpak run <id>` and its exported wrapper
 
     static SelfIdentity current();
 };
 
 // Absolute path of an executable given as a path or a name looked up in PATH;
-// empty when there is no such executable file.
+// empty when there is no such executable file. Inside a Flatpak sandbox this is
+// the host's answer (see hostsystem.h).
 QString resolveExecutable(const QString &program);
 
 // The program that actually runs, looking through `env` wrappers. Empty when it

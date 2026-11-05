@@ -1,0 +1,159 @@
+# Builds the Klinker Flatpak (io.github.manicminer.Klinker) UNSIGNED and hands it to the central
+# manicminer Flatpak publisher (github.com/manicminer/flatpak), which alone holds the signing key.
+# See packaging/flatpak/README.md.
+#
+# - push of a release tag v*.*.* whose commit is on main: build, test, GitHub Release with a bundle.
+# - workflow_dispatch on main with source_tag: rebuild an EXISTING tag with main's packaging (the
+#   tag's source must have Flatpak support, v0.4.0 or later). Tags are never made or moved here.
+# - pull requests touching the application or its packaging: build and test only.
+# Nothing here calls the publisher: its scheduled sweep finds successful tag and dispatch runs of
+# this workflow (by event, ref and the run name below) and publishes them, usually within 15-30 min.
+name: Flatpak
+run-name: Flatpak ${{ inputs.source_tag || github.ref_name }}
+
+on:
+  push:
+    tags: ['v*.*.*']
+  pull_request:
+    paths: ['packaging/flatpak/**', '.github/workflows/flatpak.yml', 'src/**', 'tests/**', 'data/**', 'CMakeLists.txt']
+  workflow_dispatch:
+    inputs:
+      source_tag:
+        description: 'Existing release tag to build (on main), e.g. v0.4.0'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flatpak-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.v.outputs.tag }}
+      commit: ${{ steps.v.outputs.commit }}
+      release: ${{ steps.v.outputs.release }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: v
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          REF: ${{ github.ref }}
+          INPUT_TAG: ${{ inputs.source_tag }}
+        run: |
+          set -euo pipefail
+          source packaging/flatpak/lib.sh
+          case "$EVENT" in
+            push) tag="$REF_NAME"; release=true ;;
+            workflow_dispatch)
+              [[ "$REF" == refs/heads/main ]] || die "run the dispatch on main: its packaging is the trusted one"
+              tag="$INPUT_TAG"; release=false ;;
+            pull_request) echo "tag=" >>"$GITHUB_OUTPUT"; echo "commit=$(git rev-parse HEAD)" >>"$GITHUB_OUTPUT"; echo "release=false" >>"$GITHUB_OUTPUT"; exit 0 ;;
+            *) die "unexpected event" ;;
+          esac
+          validate_tag "$tag" || die "not a release tag: $tag"
+          git rev-parse -q --verify "refs/tags/$tag" >/dev/null || die "no such tag"
+          commit="$(git rev-parse "refs/tags/$tag^{commit}")"
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$commit" FETCH_HEAD || die "$tag is not on main"
+          { echo "tag=$tag"; echo "commit=$commit"; echo "release=$release"; } >>"$GITHUB_OUTPUT"
+
+  build:
+    needs: validate
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Packaging (this workflow's commit)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: packaging-src
+          persist-credentials: false
+      - name: Source (the tag's commit)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.validate.outputs.commit }}
+          path: src
+          persist-credentials: false
+      - name: Flatpak tooling
+        run: bash packaging-src/packaging/flatpak/ci-install-deps.sh
+      - name: Build and unit tests (no secrets)
+        env:
+          TAG: ${{ needs.validate.outputs.tag }}
+          COMMIT: ${{ needs.validate.outputs.commit }}
+        run: |
+          set -euo pipefail
+          args=(--source src --out out --commit "$COMMIT" --packaging-commit "$GITHUB_SHA" --run-tests)
+          [[ -n "$TAG" ]] && args+=(--tag "$TAG")
+          key=packaging-src/packaging/flatpak/manicminer-flatpak.gpg
+          [[ -s "$key" ]] && args+=(--bundle-gpg-key "$key")
+          # Private session bus: org.flatpak.Builder reaches the host flatpak through it.
+          dbus-run-session -- packaging-src/packaging/flatpak/build.sh "${args[@]}"
+      - name: Build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: flatpak-build-diagnostics-x86_64
+          path: out/diagnostics
+          retention-days: 14
+          if-no-files-found: ignore
+      - name: Builder provenance
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: flatpak-builder-provenance-x86_64
+          path: out/BUILDER.json
+          retention-days: 30
+          if-no-files-found: error
+      - name: Installed application in the sandbox (offline, synthetic browsers)
+        run: |
+          set -euo pipefail
+          export FLATPAK_USER_DIR="$RUNNER_TEMP/flatpak-test"
+          mkdir -p "$FLATPAK_USER_DIR"
+          runtime_version="$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["runtime-version"])' packaging-src/packaging/flatpak/io.github.manicminer.Klinker.json)"
+          flatpak --user remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak --user install -y --noninteractive flathub "org.kde.Platform//$runtime_version"
+          packaging-src/packaging/flatpak/test-installed.sh --repo out/repo
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: flatpak-io.github.manicminer.Klinker-x86_64
+          path: |
+            out/SOURCE.json
+            out/repo.tar
+          retention-days: 30
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bundle-x86_64
+          path: out/*.flatpak
+          retention-days: 30
+          if-no-files-found: ignore
+
+  release:
+    needs: [validate, build]
+    if: needs.validate.outputs.release == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bundle-x86_64
+          path: bundle
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.validate.outputs.tag }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(bundle/*.flatpak)
+          ((${#files[@]})) || { echo "::error::no bundle: packaging/flatpak/manicminer-flatpak.gpg (public key) is missing"; exit 1; }
+          gh release view "$TAG" -R "$REPO" >/dev/null 2>&1 || gh release create "$TAG" -R "$REPO" --verify-tag --title "Klinker ${TAG#v}" \
+            --notes "Install from the manicminer Flatpak repository (https://manicminer.github.io/flatpak/) or this bundle; updates come from that repository. See the README."
+          gh release upload "$TAG" -R "$REPO" --clobber "${files[@]}"

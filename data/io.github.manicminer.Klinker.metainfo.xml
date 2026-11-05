@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.manicminer.Klinker</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Klinker</name>
+  <summary>Choose which browser opens a link, or route links by rules</summary>
+  <developer id="io.github.manicminer">
+    <name>manicminer</name>
+  </developer>
+  <description>
+    <p>
+      Klinker is a link handler for KDE Plasma. Set it as the default web browser and every link
+      either opens in the browser chosen by your routing rules, or shows a small keyboard-driven
+      chooser with your installed browsers.
+    </p>
+    <p>
+      Optional privacy features remove tracking parameters and resolve redirects before a browser
+      is chosen. Browsers are started directly with an argument list, never through a shell.
+    </p>
+    <p>
+      The Flatpak starts the browsers installed on your system, outside its sandbox, so it is
+      granted permission to run programs on the host.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.manicminer.Klinker.desktop</launchable>
+  <url type="homepage">https://github.com/manicminer/klinker</url>
+  <url type="bugtracker">https://github.com/manicminer/klinker/issues</url>
+  <url type="vcs-browser">https://github.com/manicminer/klinker</url>
+  <screenshots>
+    <screenshot type="default">
+      <caption>The chooser as a horizontal strip of browsers</caption>
+      <image>https://raw.githubusercontent.com/manicminer/klinker/v0.4.0/docs/screenshots/chooser-horizontal.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Appearance settings</caption>
+      <image>https://raw.githubusercontent.com/manicminer/klinker/v0.4.0/docs/screenshots/settings-appearance.png</image>
+    </screenshot>
+  </screenshots>
+  <categories>
+    <category>Network</category>
+    <category>WebBrowser</category>
+  </categories>
+  <provides>
+    <binary>klinker</binary>
+  </provides>
+  <requires>
+    <display_length compare="ge">360</display_length>
+  </requires>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </supports>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.4.0" date="2026-11-05">
+      <description>
+        <p>Flatpak support: browsers are found and started on the host system.</p>
+      </description>
+    </release>
+    <release version="0.3.0" date="2026-11-05"/>
+    <release version="0.2.0" date="2026-11-05"/>
+    <release version="0.1.0" date="2026-10-10"/>
+  </releases>
+</component>

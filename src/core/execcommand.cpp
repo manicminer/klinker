@@ -1,5 +1,7 @@
 #include "execcommand.h"
 
+#include "hostsystem.h"
+
 #include <QCoreApplication>
 #include <QFileInfo>
 #include <QStandardPaths>
@@ -246,7 +248,13 @@ QString formatArgumentLines(const QStringList &arguments)
 
 SelfIdentity SelfIdentity::current()
 {
-    SelfIdentity self{{u"io.github.manicminer.Klinker.desktop"_s, u"klinker.desktop"_s}, {u"klinker"_s}, {}};
+    const QString appId = QStringLiteral(KLINKER_APP_ID);
+    SelfIdentity self{{appId + u".desktop"_s, u"klinker.desktop"_s}, {u"klinker"_s, appId}, {}, {appId}};
+    if (const HostSystem &host = HostSystem::current(); host.sandboxed && host.appId != appId) {
+        self.desktopIds.append(host.appId + u".desktop"_s);
+        self.executableNames.append(host.appId);
+        self.flatpakIds.append(host.appId);
+    }
     if (QCoreApplication::instance()) {
         self.executablePaths.append(QCoreApplication::applicationFilePath());
     }
@@ -255,12 +263,30 @@ SelfIdentity SelfIdentity::current()
 
 QString resolveExecutable(const QString &program)
 {
+    if (HostSystem::current().sandboxed) {
+        return hostExecutable(program);
+    }
     if (program.contains(u'/')) {
         const QFileInfo info(program);
         return info.isFile() && info.isExecutable() ? info.absoluteFilePath() : QString();
     }
     return QStandardPaths::findExecutable(program);
 }
+
+namespace
+{
+
+// resolveExecutable() with every symlink resolved; on the host when sandboxed.
+QString canonicalExecutable(const QString &program)
+{
+    if (HostSystem::current().sandboxed) {
+        return hostCanonicalExecutable(program);
+    }
+    const QString resolved = resolveExecutable(program);
+    return resolved.isEmpty() ? QString() : QFileInfo(resolved).canonicalFilePath();
+}
+
+} // namespace
 
 QString effectiveProgram(const CommandTemplate &command)
 {
@@ -270,18 +296,35 @@ QString effectiveProgram(const CommandTemplate &command)
 
 bool isSelfCommand(const CommandTemplate &command, const SelfIdentity &self)
 {
-    const QString program = effectiveProgram(command);
-    if (program.isEmpty()) {
+    const auto unwrapped = unwrapEnv(command);
+    if (!unwrapped || unwrapped->program.contains(UrlPlaceholder)) {
         return true;
     }
-    if (self.executableNames.contains(QFileInfo(program).fileName())) {
+    const QString &program = unwrapped->program;
+    // An alias, e.g. ~/bin/browser, is known by what it links to, resolved
+    // where it runs: on the host when sandboxed.
+    const QString canonical = canonicalExecutable(program);
+    QStringList fileNames{QFileInfo(program).fileName()};
+    if (!canonical.isEmpty()) {
+        fileNames.append(QFileInfo(canonical).fileName());
+    }
+    if (std::ranges::any_of(fileNames, [&self](const QString &name) {
+            return self.executableNames.contains(name);
+        })) {
         return true;
     }
-    const QString resolved = resolveExecutable(program);
-    if (resolved.isEmpty()) {
+    // Any mention of our ID, e.g. `flatpak run --branch=stable <id>` or `<id>//stable`;
+    // telling which argument is the application would need flatpak's own parser.
+    if (fileNames.contains("flatpak"_L1) && std::ranges::any_of(unwrapped->arguments, [&self](const QString &argument) {
+            return std::ranges::any_of(self.flatpakIds, [&argument](const QString &id) {
+                return argument == id || argument.startsWith(id + u'/');
+            });
+        })) {
+        return true;
+    }
+    if (canonical.isEmpty()) {
         return false;
     }
-    const QString canonical = QFileInfo(resolved).canonicalFilePath();
     return std::ranges::any_of(self.executablePaths, [&canonical](const QString &path) {
         return QFileInfo(path).canonicalFilePath() == canonical;
     });

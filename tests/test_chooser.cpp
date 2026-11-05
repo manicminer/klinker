@@ -595,7 +595,8 @@ private Q_SLOTS:
         QCOMPARE(label->text(), nasty);
         QCOMPARE(f.window.finalUrl(), nasty);
         QVERIFY(label->displayedText().contains(u'…'));
-        QVERIFY(label->displayedText().startsWith(u"https://example.com/"_s));
+        // Where the middle is cut depends on the font: with DejaVu Sans, right after the host.
+        QVERIFY(label->displayedText().startsWith(u"https://example.com"_s));
         QVERIFY(label->displayedText().endsWith(u"xxx"_s));
         QCOMPARE(label->accessibleName(), nasty);
 
