@@ -35,6 +35,18 @@ QString localFileUrl(const QString &argument)
     return QUrl::fromLocalFile(info.absoluteFilePath()).toString(QUrl::FullyEncoded);
 }
 
+// KIO desktop launches can deliver literal ASCII spaces via QUrl::PrettyDecoded;
+// re-encode those while preserving the rest of the received argument.
+QString encodeSpaces(const QString &argument)
+{
+    const qsizetype colon = argument.indexOf(u':');
+    const QString scheme = argument.left(colon).toLower();
+    if (colon < 0 || (scheme != u"http"_s && scheme != u"https"_s && scheme != u"file"_s)) {
+        return argument;
+    }
+    return QString(argument).replace(u' ', u"%20"_s);
+}
+
 } // namespace
 
 QString decodeArgument(const QByteArray &argument)
@@ -134,12 +146,13 @@ CommandLine parseCommandLine(const QStringList &arguments)
             result.urls.append(file);
             continue;
         }
-        if (const QString error = urlArgumentError(argument); !error.isEmpty()) {
+        const QString url = encodeSpaces(argument);
+        if (const QString error = urlArgumentError(url); !error.isEmpty()) {
             result.action = CommandLine::Action::Error;
             result.error = error;
             return result;
         }
-        result.urls.append(argument);
+        result.urls.append(url);
     }
     result.settings = parser.isSet(settings) || result.urls.isEmpty();
     return result;

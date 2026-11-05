@@ -25,8 +25,9 @@ struct CommandLine {
     QStringList urls; // validated links in the given order
 };
 
-// Parses argv (including the program name). Links are kept byte for byte;
-// paths of existing local files become file:// URLs.
+// Parses argv (including the program name). Links are kept byte for byte,
+// except that plain spaces in http(s) and file links become %20; paths of
+// existing local files become file:// URLs.
 CommandLine parseCommandLine(const QStringList &arguments);
 
 // Decodes a raw argv element. Valid UTF-8 is decoded as such; otherwise every

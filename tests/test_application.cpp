@@ -379,6 +379,52 @@ private Q_SLOTS:
         QVERIFY(!parsed.error.isEmpty());
     }
 
+    // KIO expands %U with QUrl::PrettyDecoded, which turns %20 back into spaces.
+    void prettyDecodedSpacesAreReEncoded_data()
+    {
+        QTest::addColumn<QString>("argument");
+        QTest::addColumn<QString>("expected");
+        QTest::newRow("oauth scopes") << u"https://login.example/oauth2/v2.0/authorize?scope=a%2Fb offline_access openid profile&state=s1"_s
+                                      << u"https://login.example/oauth2/v2.0/authorize?scope=a%2Fb%20offline_access%20openid%20profile&state=s1"_s;
+        QTest::newRow("path, plus, fragment") << u"http://e.example/a b/c%2Bd+e?q=1%252 2&r=%26#f g"_s
+                                              << u"http://e.example/a%20b/c%2Bd+e?q=1%252%202&r=%26#f%20g"_s;
+        QTest::newRow("missing file") << u"file:///nonexistent dir/page one.html"_s << u"file:///nonexistent%20dir/page%20one.html"_s;
+        QTest::newRow("already encoded") << u"https://e.example/a%20b?x=%2F%2B%25+"_s << u"https://e.example/a%20b?x=%2F%2B%25+"_s;
+    }
+
+    void prettyDecodedSpacesAreReEncoded()
+    {
+        QFETCH(QString, argument);
+        QFETCH(QString, expected);
+        const CommandLine parsed = klinker::parseCommandLine({u"klinker"_s, argument});
+        QCOMPARE(parsed.action, CommandLine::Action::Run);
+        QCOMPARE(parsed.urls, QStringList{expected});
+        QCOMPARE(klinker::parseCommandLine({u"klinker"_s, expected}).urls, QStringList{expected});
+    }
+
+    void controlCharactersAreStillRejected_data()
+    {
+        QTest::addColumn<QString>("url");
+        QTest::newRow("tab") << u"https://e.example/a\tb"_s;
+        QTest::newRow("newline") << u"https://e.example/a b\nc"_s;
+        QTest::newRow("carriage return") << u"https://e.example/?a=1\r"_s;
+        QTest::newRow("nul") << u"https://e.example/a"_s + QChar(0) + u"b"_s;
+        QTest::newRow("no-break space") << u"https://e.example/a\u00a0b"_s;
+        QTest::newRow("bidi override") << u"https://e.example/a\u202eb"_s;
+        QTest::newRow("leading space") << u" https://e.example/"_s;
+        QTest::newRow("space in host") << u"https://e .example/"_s;
+        QTest::newRow("space in scheme") << u"java script:alert(1)"_s;
+        QTest::newRow("other scheme") << u"javascript:alert('a b')"_s;
+    }
+
+    void controlCharactersAreStillRejected()
+    {
+        QFETCH(QString, url);
+        const CommandLine parsed = klinker::parseCommandLine({u"klinker"_s, url});
+        QCOMPARE(parsed.action, CommandLine::Action::Error);
+        QVERIFY(parsed.urls.isEmpty());
+    }
+
     void localFilesBecomeFileUrls()
     {
         QTemporaryDir dir;
@@ -422,6 +468,30 @@ private Q_SLOTS:
         const QString error = QString::fromUtf8(bad.readAllStandardError());
         QVERIFY(error.contains(u"javascript:alert(1)"_s));
         QVERIFY2(error.startsWith(u"klinker: "_s) && error.contains(u"“klinker --help”"_s), qPrintable(error));
+    }
+
+    // As KIO starts the handler: one argv element with literal spaces.
+    void binaryLaunchesAPrettyDecodedLinkEncoded()
+    {
+        Sandbox box;
+        Config config;
+        config.browsers = {box.capture(u"a"_s, u"Alpha"_s)};
+        config.rules = {{QString(), true, RuleType::Domain, u"login.example"_s, u"a"_s}};
+        box.writeConfig(config);
+
+        QProcess app;
+        QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+        env.insert(u"QT_QPA_PLATFORM"_s, u"offscreen"_s);
+        env.insert(u"HOME"_s, box.dir.path());
+        env.insert(u"XDG_DATA_DIRS"_s, box.dataDir);
+        env.insert(u"DBUS_SESSION_BUS_ADDRESS"_s, u"unix:path=%1/no-bus"_s.arg(box.dir.path()));
+        app.setProcessEnvironment(env);
+        app.start(AppBinary, {u"--config"_s, box.configPath, u"https://login.example/authorize?scope=a%2Fb offline_access openid&state=s1"_s});
+        QVERIFY(app.waitForFinished(15000));
+        QVERIFY2(app.exitCode() == 0, app.readAllStandardError().constData());
+        QTRY_COMPARE(box.captures().size(), 1);
+        QCOMPARE(box.captures().first(),
+                 (QStringList{u"--browser=a"_s, u"https://login.example/authorize?scope=a%2Fb%20offline_access%20openid&state=s1"_s}));
     }
 
     void desktopFileUsesTheKlinkerIdentity()

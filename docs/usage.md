@@ -15,8 +15,10 @@
 
 Links must be `http` or `https` URLs with a host, `file` URLs, or paths of
 existing files (turned into `file://` URLs). Links are passed on exactly as
-received; bytes that are not valid UTF-8 are percent-encoded rather than
-replaced. Unusable arguments are reported on standard error with exit status 2
+received, except that plain spaces become `%20` (KDE passes links with `%20`
+decoded to spaces); bytes that are not valid UTF-8 are percent-encoded rather
+than replaced. Tabs, line breaks and other control characters are refused.
+Unusable arguments are reported on standard error with exit status 2
 before any window opens.
 
 Exit status is 0 otherwise, including when the chooser is cancelled.

@@ -130,8 +130,8 @@ well to remove them.
     klinker --config FILE    # use another configuration file
 
 Accepted links are `http`, `https` and `file` URLs, and paths of existing
-files. Anything else (`javascript:`, `data:`, links with spaces or control
-characters, ...) is refused with a message and exit status 2. More in
+files. Anything else (`javascript:`, `data:`, links with control characters
+or whitespace other than plain spaces, ...) is refused with a message and exit status 2. More in
 [docs/usage.md](docs/usage.md).
 
 ## Configuration
